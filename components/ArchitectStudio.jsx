@@ -6,7 +6,7 @@ import {
   Box, Layers, Trash2, RotateCcw, PlayCircle, PauseCircle, Ruler, Sparkles, X,
   MapPin, PencilRuler, Building2, FileCheck2, HardHat, ClipboardCheck, KeyRound,
   CheckCircle2, Circle, Clock3, ChevronLeft, FolderPlus, ChevronDown, Plus, CalendarDays, UserRound,
-  Loader2, AlertTriangle,
+  Loader2, AlertTriangle, LogOut,
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 
@@ -265,7 +265,7 @@ function Viewport3D({ rooms, wallHeight, wallColor, autoRotate }) {
 }
 
 // ---------------- شاشة إنشاء مشروع جديد ----------------
-function ProjectSetup({ onCreate }) {
+function ProjectSetup({ onCreate, onSignOut, userEmail }) {
   const [name, setName] = useState("");
   const [client, setClient] = useState("");
   const [landType, setLandType] = useState(LAND_TYPES[0]);
@@ -292,15 +292,22 @@ function ProjectSetup({ onCreate }) {
   return (
     <div dir="rtl" className="w-full h-screen flex items-center justify-center bg-slate-950 text-slate-100 px-4" style={{ fontFamily: "'Tajawal', sans-serif" }}>
       <div className="w-full max-w-md">
-        <div className="flex items-center gap-2.5 mb-6">
-          <div className="w-9 h-9 rounded-md bg-orange-500 flex items-center justify-center">
-            <Box size={20} className="text-slate-950" />
+        <div className="flex items-center justify-between gap-2.5 mb-6">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-md bg-orange-500 flex items-center justify-center">
+              <Box size={20} className="text-slate-950" />
+            </div>
+            <div>
+              <h1 className="text-lg font-extrabold leading-none">مُخطِّط · استوديو 360</h1>
+              <p className="text-[11px] text-slate-400 mt-0.5">تصميم معماري وديكور بتقنية ثلاثية الأبعاد</p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-lg font-extrabold leading-none">مُخطِّط · استوديو 360</h1>
-            <p className="text-[11px] text-slate-400 mt-0.5">تصميم معماري وديكور بتقنية ثلاثية الأبعاد</p>
-          </div>
+          <button onClick={onSignOut} title="تسجيل الخروج" className="flex items-center gap-1.5 text-[11px] text-slate-500 hover:text-slate-300 shrink-0">
+            <LogOut size={13} /> خروج
+          </button>
         </div>
+
+        {userEmail && <p className="text-[11px] text-slate-500 mb-3 -mt-3 font-mono truncate" dir="ltr">{userEmail}</p>}
 
         <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-5 space-y-4">
           <div className="flex items-center gap-2 text-orange-400 text-sm font-bold">
@@ -574,12 +581,14 @@ function PhaseTracker({ phases, setPhases, designProgress, onOpenDesign }) {
 }
 
 // ---------------- التطبيق الرئيسي ----------------
-export default function ArchitectStudio() {
+export default function ArchitectStudio({ session }) {
+  const user = session.user;
   const [project, setProject] = useState(null);
   const [phases, setPhases] = useState([]);
   const [view, setView] = useState("phases"); // 'phases' | 'plan' | '3d'
   const [confirmReset, setConfirmReset] = useState(false);
   const [loadError, setLoadError] = useState("");
+  const [initializing, setInitializing] = useState(true);
 
   const [rooms, setRooms] = useState([]);
   const [wallHeight, setWallHeight] = useState(2.7);
@@ -741,10 +750,49 @@ export default function ArchitectStudio() {
     }));
   }
 
+  useEffect(() => {
+    let cancelled = false;
+    async function loadExistingProject() {
+      const { data: proj, error } = await supabase
+        .from("projects")
+        .select("*")
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (cancelled) return;
+      if (error) {
+        setLoadError(error.message || "تعذر تحميل المشروع");
+        setInitializing(false);
+        return;
+      }
+      if (proj) {
+        const [phasesData, roomsRes] = await Promise.all([
+          fetchPhasesForProject(proj.id),
+          supabase.from("rooms").select("*").eq("project_id", proj.id),
+        ]);
+        if (cancelled) return;
+        setProject(proj);
+        setPhases(phasesData);
+        setRooms(roomsRes.data || []);
+        setWallHeight(proj.wall_height);
+        setWallColor(proj.wall_color);
+      }
+      setInitializing(false);
+    }
+    loadExistingProject();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function signOut() {
+    await supabase.auth.signOut();
+  }
+
   async function handleCreateProject(formData) {
     const { data: proj, error } = await supabase
       .from("projects")
       .insert({
+        user_id: user.id,
         name: formData.name,
         client: formData.client,
         land_type: formData.landType,
@@ -792,8 +840,29 @@ export default function ArchitectStudio() {
     setView("phases");
   }
 
+  if (initializing) {
+    return (
+      <div className="w-full h-screen flex items-center justify-center bg-slate-950">
+        <Loader2 size={24} className="text-orange-500 animate-spin" />
+      </div>
+    );
+  }
+
+  if (loadError && !project) {
+    return (
+      <div dir="rtl" className="w-full h-screen flex items-center justify-center bg-slate-950 text-slate-100 px-4" style={{ fontFamily: "'Tajawal', sans-serif" }}>
+        <div className="text-center space-y-3">
+          <p className="flex items-center justify-center gap-1.5 text-sm text-red-400 bg-red-950/40 border border-red-900 rounded-md px-3 py-2">
+            <AlertTriangle size={14} className="shrink-0" /> تعذر تحميل بياناتك: {loadError}
+          </p>
+          <button onClick={signOut} className="text-xs text-slate-500 hover:text-slate-300 underline underline-offset-2">تسجيل الخروج</button>
+        </div>
+      </div>
+    );
+  }
+
   if (!project) {
-    return <ProjectSetup onCreate={handleCreateProject} />;
+    return <ProjectSetup onCreate={handleCreateProject} onSignOut={signOut} userEmail={user.email} />;
   }
 
   const totalArea = rooms.reduce((s, r) => s + r.gw * r.gh, 0);
@@ -832,7 +901,7 @@ export default function ArchitectStudio() {
           </button>
         </div>
 
-        <div>
+        <div className="flex items-center gap-1">
           {confirmReset ? (
             <div className="flex items-center gap-1.5 text-xs">
               <span className="text-slate-400">متأكد؟</span>
@@ -844,6 +913,9 @@ export default function ArchitectStudio() {
               <FolderPlus size={13} /> مشروع جديد
             </button>
           )}
+          <button onClick={signOut} title="تسجيل الخروج" className="flex items-center gap-1.5 text-xs font-semibold text-slate-400 hover:text-slate-200 px-2 py-1.5">
+            <LogOut size={13} /> خروج
+          </button>
         </div>
       </header>
 
