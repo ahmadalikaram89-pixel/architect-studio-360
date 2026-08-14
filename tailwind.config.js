@@ -5,7 +5,13 @@ module.exports = {
     "./components/**/*.{js,jsx}",
   ],
   theme: {
-    extend: {},
+    extend: {
+      colors: {
+        slate: {
+          950: "#0B0F17",
+        },
+      },
+    },
   },
   plugins: [],
 };
