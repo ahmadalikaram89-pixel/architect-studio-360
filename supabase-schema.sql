@@ -60,7 +60,7 @@ create table if not exists rooms (
   gy numeric not null,   -- الموقع الرأسي بالمتر
   gw numeric not null,   -- العرض بالمتر
   gh numeric not null,   -- العمق بالمتر
-  color text not null default '#FF6B35',
+  color text not null default '#C7714E',
   created_at timestamptz not null default now()
 );
 

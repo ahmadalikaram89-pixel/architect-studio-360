@@ -11,7 +11,7 @@ import {
 import { supabase } from "../lib/supabaseClient";
 
 const ROOM_COLORS = [
-  { name: "طوبي", hex: "#FF6B35" },
+  { name: "طوبي", hex: "#C7714E" },
   { name: "فيروزي", hex: "#4AC1D9" },
   { name: "بنفسجي", hex: "#8B7FD1" },
   { name: "أخضر مريمية", hex: "#5FBF7A" },
@@ -294,7 +294,7 @@ function ProjectSetup({ onCreate, onSignOut, userEmail }) {
       <div className="w-full max-w-md">
         <div className="flex items-center justify-between gap-2.5 mb-6">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-md bg-orange-500 flex items-center justify-center">
+            <div className="w-9 h-9 rounded-md bg-cyan-500 flex items-center justify-center">
               <Box size={20} className="text-slate-950" />
             </div>
             <div>
@@ -310,39 +310,39 @@ function ProjectSetup({ onCreate, onSignOut, userEmail }) {
         {userEmail && <p className="text-[11px] text-slate-500 mb-3 -mt-3 font-mono truncate" dir="ltr">{userEmail}</p>}
 
         <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-5 space-y-4">
-          <div className="flex items-center gap-2 text-orange-400 text-sm font-bold">
+          <div className="flex items-center gap-2 text-cyan-400 text-sm font-bold">
             <FolderPlus size={16} /> ابدأ مشروعاً جديداً من الصفر
           </div>
 
           <div>
             <label className="text-xs text-slate-400 block mb-1.5">اسم المشروع *</label>
-            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="مثال: فيلا العائلة" className="w-full bg-slate-950 border border-slate-700 rounded-md px-3 py-2 text-sm outline-none focus:border-orange-500" />
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="مثال: فيلا العائلة" className="w-full bg-slate-950 border border-slate-700 rounded-md px-3 py-2 text-sm outline-none focus:border-cyan-500" />
           </div>
 
           <div>
             <label className="text-xs text-slate-400 block mb-1.5">اسم العميل (اختياري)</label>
-            <input value={client} onChange={(e) => setClient(e.target.value)} placeholder="مثال: أبو محمد" className="w-full bg-slate-950 border border-slate-700 rounded-md px-3 py-2 text-sm outline-none focus:border-orange-500" />
+            <input value={client} onChange={(e) => setClient(e.target.value)} placeholder="مثال: أبو محمد" className="w-full bg-slate-950 border border-slate-700 rounded-md px-3 py-2 text-sm outline-none focus:border-cyan-500" />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs text-slate-400 block mb-1.5">نوع الأرض</label>
-              <select value={landType} onChange={(e) => setLandType(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-md px-2.5 py-2 text-sm outline-none focus:border-orange-500">
+              <select value={landType} onChange={(e) => setLandType(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-md px-2.5 py-2 text-sm outline-none focus:border-cyan-500">
                 {LAND_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
               </select>
             </div>
             <div>
               <label className="text-xs text-slate-400 block mb-1.5">المدينة</label>
-              <input value={city} onChange={(e) => setCity(e.target.value)} placeholder="مثال: عمّان" className="w-full bg-slate-950 border border-slate-700 rounded-md px-2.5 py-2 text-sm outline-none focus:border-orange-500" />
+              <input value={city} onChange={(e) => setCity(e.target.value)} placeholder="مثال: عمّان" className="w-full bg-slate-950 border border-slate-700 rounded-md px-2.5 py-2 text-sm outline-none focus:border-cyan-500" />
             </div>
           </div>
 
           <div>
             <label className="text-xs text-slate-400 block mb-1.5">أبعاد الأرض (متر)</label>
             <div className="flex items-center gap-2">
-              <input type="number" min="6" max="60" value={width} onChange={(e) => setWidth(clamp(parseFloat(e.target.value) || 6, 6, 60))} className="w-full bg-slate-950 border border-slate-700 rounded-md px-2.5 py-2 text-sm outline-none focus:border-orange-500 font-mono" />
+              <input type="number" min="6" max="60" value={width} onChange={(e) => setWidth(clamp(parseFloat(e.target.value) || 6, 6, 60))} className="w-full bg-slate-950 border border-slate-700 rounded-md px-2.5 py-2 text-sm outline-none focus:border-cyan-500 font-mono" />
               <span className="text-slate-500 text-xs">×</span>
-              <input type="number" min="6" max="60" value={depth} onChange={(e) => setDepth(clamp(parseFloat(e.target.value) || 6, 6, 60))} className="w-full bg-slate-950 border border-slate-700 rounded-md px-2.5 py-2 text-sm outline-none focus:border-orange-500 font-mono" />
+              <input type="number" min="6" max="60" value={depth} onChange={(e) => setDepth(clamp(parseFloat(e.target.value) || 6, 6, 60))} className="w-full bg-slate-950 border border-slate-700 rounded-md px-2.5 py-2 text-sm outline-none focus:border-cyan-500 font-mono" />
               <span className="text-slate-500 text-xs whitespace-nowrap">متر</span>
             </div>
             <p className="text-[11px] font-mono text-slate-500 mt-1">المساحة الإجمالية: {(width * depth).toFixed(0)} م²</p>
@@ -351,7 +351,7 @@ function ProjectSetup({ onCreate, onSignOut, userEmail }) {
           <button
             disabled={!canCreate}
             onClick={handleCreate}
-            className="w-full flex items-center justify-center gap-2 bg-orange-500 disabled:bg-slate-700 disabled:text-slate-400 text-slate-950 font-bold rounded-md py-2.5 mt-1 transition-colors"
+            className="w-full flex items-center justify-center gap-2 bg-cyan-500 disabled:bg-slate-700 disabled:text-slate-400 text-slate-950 font-bold rounded-md py-2.5 mt-1 transition-colors"
           >
             {loading ? (
               <>جارِ الإنشاء... <Loader2 size={16} className="animate-spin" /></>
@@ -407,7 +407,7 @@ function PhaseCard({ phase, expanded, onToggleExpand, onCycleStatus, onFieldComm
           <div className="flex items-center gap-2 flex-wrap">
             <p className="text-sm font-bold">{phase.title}</p>
             {phase.links_to_design && (
-              <button onClick={(e) => { e.stopPropagation(); onOpenDesign(); }} className="text-[11px] text-orange-400 hover:text-orange-300 underline underline-offset-2">
+              <button onClick={(e) => { e.stopPropagation(); onOpenDesign(); }} className="text-[11px] text-cyan-400 hover:text-cyan-300 underline underline-offset-2">
                 فتح أداة التصميم
               </button>
             )}
@@ -451,7 +451,7 @@ function PhaseCard({ phase, expanded, onToggleExpand, onCycleStatus, onFieldComm
                 onChange={(e) => setNewTask(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && addSubtask()}
                 placeholder="أضف مهمة فرعية..."
-                className="flex-1 bg-slate-950 border border-slate-700 rounded-md px-2.5 py-1.5 text-xs outline-none focus:border-orange-500"
+                className="flex-1 bg-slate-950 border border-slate-700 rounded-md px-2.5 py-1.5 text-xs outline-none focus:border-cyan-500"
               />
               <button onClick={addSubtask} className="flex items-center gap-1 text-xs font-semibold bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-md px-2.5 py-1.5">
                 <Plus size={13} />
@@ -462,11 +462,11 @@ function PhaseCard({ phase, expanded, onToggleExpand, onCycleStatus, onFieldComm
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-[11px] text-slate-400 flex items-center gap-1 mb-1"><CalendarDays size={12} /> تاريخ البدء</label>
-              <input type="date" value={phase.start_date || ""} onChange={(e) => onFieldCommit(phase.id, "start_date", e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-md px-2 py-1.5 text-xs outline-none focus:border-orange-500 font-mono" />
+              <input type="date" value={phase.start_date || ""} onChange={(e) => onFieldCommit(phase.id, "start_date", e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-md px-2 py-1.5 text-xs outline-none focus:border-cyan-500 font-mono" />
             </div>
             <div>
               <label className="text-[11px] text-slate-400 flex items-center gap-1 mb-1"><CalendarDays size={12} /> الانتهاء المتوقع</label>
-              <input type="date" value={phase.end_date || ""} onChange={(e) => onFieldCommit(phase.id, "end_date", e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-md px-2 py-1.5 text-xs outline-none focus:border-orange-500 font-mono" />
+              <input type="date" value={phase.end_date || ""} onChange={(e) => onFieldCommit(phase.id, "end_date", e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-md px-2 py-1.5 text-xs outline-none focus:border-cyan-500 font-mono" />
             </div>
           </div>
 
@@ -477,7 +477,7 @@ function PhaseCard({ phase, expanded, onToggleExpand, onCycleStatus, onFieldComm
               onChange={(e) => setLocal((l) => ({ ...l, owner: e.target.value }))}
               onBlur={(e) => onFieldCommit(phase.id, "owner", e.target.value)}
               placeholder="مثال: المهندس الإنشائي - سامر"
-              className="w-full bg-slate-950 border border-slate-700 rounded-md px-2.5 py-1.5 text-xs outline-none focus:border-orange-500"
+              className="w-full bg-slate-950 border border-slate-700 rounded-md px-2.5 py-1.5 text-xs outline-none focus:border-cyan-500"
             />
           </div>
 
@@ -489,7 +489,7 @@ function PhaseCard({ phase, expanded, onToggleExpand, onCycleStatus, onFieldComm
               onBlur={(e) => onFieldCommit(phase.id, "notes", e.target.value)}
               rows={2}
               placeholder="أي تفاصيل إضافية عن هذه المرحلة..."
-              className="w-full bg-slate-950 border border-slate-700 rounded-md px-2.5 py-1.5 text-xs outline-none focus:border-orange-500 resize-none"
+              className="w-full bg-slate-950 border border-slate-700 rounded-md px-2.5 py-1.5 text-xs outline-none focus:border-cyan-500 resize-none"
             />
           </div>
         </div>
@@ -550,10 +550,10 @@ function PhaseTracker({ phases, setPhases, designProgress, onOpenDesign }) {
         <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4">
           <div className="flex items-center justify-between mb-2">
             <p className="text-sm font-bold">التقدم العام</p>
-            <p className="text-sm font-mono text-orange-400">{pct}%</p>
+            <p className="text-sm font-mono text-cyan-400">{pct}%</p>
           </div>
           <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
-            <div className="h-full bg-orange-500 transition-all duration-500" style={{ width: `${pct}%` }} />
+            <div className="h-full bg-cyan-500 transition-all duration-500" style={{ width: `${pct}%` }} />
           </div>
           <p className="text-[11px] text-slate-500 mt-1.5">{doneSub} من {totalSub} مهمة فرعية مكتملة عبر كل المراحل</p>
         </div>
@@ -634,7 +634,7 @@ export default function ArchitectStudio({ session }) {
       const x = r.gx * PPM, y = r.gy * PPM, rw = r.gw * PPM, rh = r.gh * PPM;
       ctx.fillStyle = r.color + "30";
       ctx.fillRect(x, y, rw, rh);
-      ctx.strokeStyle = r.id === selectedId ? "#FF6B35" : r.color;
+      ctx.strokeStyle = r.id === selectedId ? "#22D3EE" : r.color;
       ctx.lineWidth = r.id === selectedId ? 3 : 2;
       ctx.strokeRect(x, y, rw, rh);
       ctx.fillStyle = "#EAF0F8";
@@ -650,7 +650,7 @@ export default function ArchitectStudio({ session }) {
       const gx = Math.min(d.sx, d.ex), gy = Math.min(d.sy, d.ey);
       const gw = Math.abs(d.ex - d.sx), gh = Math.abs(d.ey - d.sy);
       ctx.setLineDash([6, 4]);
-      ctx.strokeStyle = "#FF6B35";
+      ctx.strokeStyle = "#22D3EE";
       ctx.lineWidth = 2;
       ctx.strokeRect(gx * PPM, gy * PPM, gw * PPM, gh * PPM);
       ctx.setLineDash([]);
@@ -843,7 +843,7 @@ export default function ArchitectStudio({ session }) {
   if (initializing) {
     return (
       <div className="w-full h-screen flex items-center justify-center bg-slate-950">
-        <Loader2 size={24} className="text-orange-500 animate-spin" />
+        <Loader2 size={24} className="text-cyan-500 animate-spin" />
       </div>
     );
   }
@@ -869,11 +869,11 @@ export default function ArchitectStudio({ session }) {
 
   return (
     <div dir="rtl" className="w-full h-screen flex flex-col bg-slate-950 text-slate-100" style={{ fontFamily: "'Tajawal', sans-serif" }}>
-      <style>{`input[type="range"] { accent-color: #FF6B35; }`}</style>
+      <style>{`input[type="range"] { accent-color: #22D3EE; }`}</style>
 
       <header className="flex items-center justify-between border-b border-slate-800 bg-slate-900/60 px-5 py-3 shrink-0 flex-wrap gap-2">
         <div className="flex items-center gap-2.5 min-w-0">
-          <div className="w-8 h-8 rounded-md bg-orange-500 flex items-center justify-center shrink-0">
+          <div className="w-8 h-8 rounded-md bg-cyan-500 flex items-center justify-center shrink-0">
             <Box size={18} className="text-slate-950" />
           </div>
           <div className="min-w-0">
@@ -885,17 +885,17 @@ export default function ArchitectStudio({ session }) {
         </div>
 
         <div className="flex items-center gap-2 bg-slate-800/70 rounded-lg p-1">
-          <button onClick={() => setView("phases")} className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${view === "phases" ? "bg-orange-500 text-slate-950" : "text-slate-300 hover:text-white"}`}>
+          <button onClick={() => setView("phases")} className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${view === "phases" ? "bg-cyan-500 text-slate-950" : "text-slate-300 hover:text-white"}`}>
             مراحل المشروع
           </button>
-          <button onClick={() => setView("plan")} className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${view === "plan" ? "bg-orange-500 text-slate-950" : "text-slate-300 hover:text-white"}`}>
+          <button onClick={() => setView("plan")} className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${view === "plan" ? "bg-cyan-500 text-slate-950" : "text-slate-300 hover:text-white"}`}>
             مخطط 2D
           </button>
           <button
             disabled={rooms.length === 0}
             title={rooms.length === 0 ? "ارسم غرفة واحدة على الأقل أولاً" : ""}
             onClick={() => setView("3d")}
-            className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${view === "3d" ? "bg-orange-500 text-slate-950" : "text-slate-300 hover:text-white"}`}
+            className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${view === "3d" ? "bg-cyan-500 text-slate-950" : "text-slate-300 hover:text-white"}`}
           >
             عرض 3D · 360°
           </button>
@@ -959,7 +959,7 @@ export default function ArchitectStudio({ session }) {
               <div className="flex gap-2">
                 {WALL_COLORS.map((c) => (
                   <button key={c.hex} title={c.name} onClick={() => commitWallColor(c.hex)} style={{ backgroundColor: c.hex }}
-                    className={`w-7 h-7 rounded-full border-2 transition-transform ${wallColor === c.hex ? "border-orange-500 scale-110" : "border-slate-700"}`} />
+                    className={`w-7 h-7 rounded-full border-2 transition-transform ${wallColor === c.hex ? "border-cyan-500 scale-110" : "border-slate-700"}`} />
                 ))}
               </div>
             </div>
@@ -974,7 +974,7 @@ export default function ArchitectStudio({ session }) {
               <div>
                 <p className="text-xs font-semibold text-slate-400 mb-2">جولة 360°</p>
                 <button onClick={() => setAutoRotate((a) => !a)}
-                  className={`w-full flex items-center justify-center gap-2 text-sm font-semibold rounded-md py-2 transition-colors ${autoRotate ? "bg-orange-500 text-slate-950" : "bg-slate-800 hover:bg-slate-700 border border-slate-700"}`}>
+                  className={`w-full flex items-center justify-center gap-2 text-sm font-semibold rounded-md py-2 transition-colors ${autoRotate ? "bg-cyan-500 text-slate-950" : "bg-slate-800 hover:bg-slate-700 border border-slate-700"}`}>
                   {autoRotate ? <PauseCircle size={16}/> : <PlayCircle size={16}/>}
                   {autoRotate ? "إيقاف الدوران التلقائي" : "تشغيل الدوران التلقائي"}
                 </button>
@@ -990,7 +990,7 @@ export default function ArchitectStudio({ session }) {
                 {rooms.length === 0 && <p className="text-[11px] text-slate-600">لا توجد غرف بعد.</p>}
                 {rooms.map((r) => (
                   <div key={r.id} onClick={() => setSelectedId(r.id)}
-                    className={`flex items-center justify-between rounded-md px-2.5 py-2 border cursor-pointer transition-colors ${selectedId === r.id ? "border-orange-500 bg-slate-800/80" : "border-slate-800 bg-slate-900/60 hover:bg-slate-800/60"}`}>
+                    className={`flex items-center justify-between rounded-md px-2.5 py-2 border cursor-pointer transition-colors ${selectedId === r.id ? "border-cyan-500 bg-slate-800/80" : "border-slate-800 bg-slate-900/60 hover:bg-slate-800/60"}`}>
                     <div className="flex items-center gap-2 min-w-0">
                       <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: r.color }} />
                       <div className="min-w-0">

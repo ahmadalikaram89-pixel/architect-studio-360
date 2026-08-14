@@ -78,7 +78,7 @@ export default function Auth() {
     <div dir="rtl" className="w-full h-screen flex items-center justify-center bg-slate-950 text-slate-100 px-4" style={{ fontFamily: "'Tajawal', sans-serif" }}>
       <div className="w-full max-w-md">
         <div className="flex items-center gap-2.5 mb-6">
-          <div className="w-9 h-9 rounded-md bg-orange-500 flex items-center justify-center">
+          <div className="w-9 h-9 rounded-md bg-cyan-500 flex items-center justify-center">
             <Box size={20} className="text-slate-950" />
           </div>
           <div>
@@ -92,14 +92,14 @@ export default function Auth() {
             <button
               type="button"
               onClick={() => switchMode("login")}
-              className={`flex-1 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${mode === "login" ? "bg-orange-500 text-slate-950" : "text-slate-300 hover:text-white"}`}
+              className={`flex-1 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${mode === "login" ? "bg-cyan-500 text-slate-950" : "text-slate-300 hover:text-white"}`}
             >
               تسجيل الدخول
             </button>
             <button
               type="button"
               onClick={() => switchMode("signup")}
-              className={`flex-1 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${mode === "signup" ? "bg-orange-500 text-slate-950" : "text-slate-300 hover:text-white"}`}
+              className={`flex-1 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${mode === "signup" ? "bg-cyan-500 text-slate-950" : "text-slate-300 hover:text-white"}`}
             >
               حساب جديد
             </button>
@@ -121,7 +121,7 @@ export default function Auth() {
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="example@email.com"
                   dir="ltr"
-                  className="w-full bg-slate-950 border border-slate-700 rounded-md px-3 py-2 text-sm outline-none focus:border-orange-500"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-md px-3 py-2 text-sm outline-none focus:border-cyan-500"
                 />
               </div>
 
@@ -135,7 +135,7 @@ export default function Auth() {
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="6 أحرف على الأقل"
                   dir="ltr"
-                  className="w-full bg-slate-950 border border-slate-700 rounded-md px-3 py-2 text-sm outline-none focus:border-orange-500"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-md px-3 py-2 text-sm outline-none focus:border-cyan-500"
                 />
               </div>
 
@@ -150,7 +150,7 @@ export default function Auth() {
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     placeholder="أعيدي كتابة كلمة السر"
                     dir="ltr"
-                    className="w-full bg-slate-950 border border-slate-700 rounded-md px-3 py-2 text-sm outline-none focus:border-orange-500"
+                    className="w-full bg-slate-950 border border-slate-700 rounded-md px-3 py-2 text-sm outline-none focus:border-cyan-500"
                   />
                 </div>
               )}
@@ -158,7 +158,7 @@ export default function Auth() {
               <button
                 type="submit"
                 disabled={!canSubmit}
-                className="w-full flex items-center justify-center gap-2 bg-orange-500 disabled:bg-slate-700 disabled:text-slate-400 text-slate-950 font-bold rounded-md py-2.5 mt-1 transition-colors"
+                className="w-full flex items-center justify-center gap-2 bg-cyan-500 disabled:bg-slate-700 disabled:text-slate-400 text-slate-950 font-bold rounded-md py-2.5 mt-1 transition-colors"
               >
                 {loading ? (
                   <>جارِ التحقق... <Loader2 size={16} className="animate-spin" /></>
