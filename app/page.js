@@ -20,7 +20,7 @@ export default function Home() {
   if (session === undefined) {
     return (
       <div className="w-full h-screen flex items-center justify-center bg-slate-950">
-        <Loader2 size={24} className="text-orange-500 animate-spin" />
+        <Loader2 size={24} className="text-cyan-500 animate-spin" />
       </div>
     );
   }
