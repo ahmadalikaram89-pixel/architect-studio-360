@@ -9,6 +9,7 @@ create extension if not exists "pgcrypto";
 -- جدول المشاريع
 create table if not exists projects (
   id uuid primary key default gen_random_uuid(),
+  user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
   name text not null,
   client text default '',
   land_type text default '',
@@ -124,17 +125,40 @@ create trigger trg_create_default_subtasks
   for each row execute function create_default_subtasks();
 
 -- ============================================================
--- تفعيل الأمان (RLS) — بشكل مبسّط حالياً بدون نظام تسجيل دخول
--- ملاحظة مهمة: هذا يسمح لأي شخص عنده مفتاح anon بالوصول لكل البيانات.
--- مقبول لمرحلة التجربة/العرض. لازم نضيف تسجيل دخول (Supabase Auth)
--- ونربط كل صف بـ user_id قبل ما تستخدمي هذا لمشاريع عملاء حقيقيين.
+-- تفعيل الأمان (RLS) — كل مستخدم يشوف ويعدّل مشاريعه فقط
+-- (تسجيل الدخول عبر Supabase Auth بالإيميل وكلمة السر)
 -- ============================================================
 alter table projects enable row level security;
 alter table phases enable row level security;
 alter table subtasks enable row level security;
 alter table rooms enable row level security;
 
-create policy "allow all - projects" on projects for all using (true) with check (true);
-create policy "allow all - phases" on phases for all using (true) with check (true);
-create policy "allow all - subtasks" on subtasks for all using (true) with check (true);
-create policy "allow all - rooms" on rooms for all using (true) with check (true);
+create policy "own projects" on projects
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+create policy "own phases" on phases
+  for all using (
+    exists (select 1 from projects p where p.id = phases.project_id and p.user_id = auth.uid())
+  ) with check (
+    exists (select 1 from projects p where p.id = phases.project_id and p.user_id = auth.uid())
+  );
+
+create policy "own subtasks" on subtasks
+  for all using (
+    exists (
+      select 1 from phases ph join projects p on p.id = ph.project_id
+      where ph.id = subtasks.phase_id and p.user_id = auth.uid()
+    )
+  ) with check (
+    exists (
+      select 1 from phases ph join projects p on p.id = ph.project_id
+      where ph.id = subtasks.phase_id and p.user_id = auth.uid()
+    )
+  );
+
+create policy "own rooms" on rooms
+  for all using (
+    exists (select 1 from projects p where p.id = rooms.project_id and p.user_id = auth.uid())
+  ) with check (
+    exists (select 1 from projects p where p.id = rooms.project_id and p.user_id = auth.uid())
+  );
