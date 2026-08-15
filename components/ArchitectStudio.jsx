@@ -9,6 +9,7 @@ import {
   Loader2, AlertTriangle, LogOut,
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
+import { computeCenter, rebuildGroup } from "../lib/build3d";
 
 const ROOM_COLORS = [
   { name: "طوبي", hex: "#C7714E" },
@@ -47,66 +48,11 @@ function clamp(v, a, b) {
   return Math.min(b, Math.max(a, v));
 }
 
-function computeCenter(rooms) {
-  if (!rooms.length) return { x: 10, z: 8, radius: 12 };
-  let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity;
-  rooms.forEach((r) => {
-    minX = Math.min(minX, r.gx); maxX = Math.max(maxX, r.gx + r.gw);
-    minZ = Math.min(minZ, r.gy); maxZ = Math.max(maxZ, r.gy + r.gh);
-  });
-  return { x: (minX + maxX) / 2, z: (minZ + maxZ) / 2, radius: Math.max(maxX - minX, maxZ - minZ) * 1.5 + 4 };
-}
-
-function rebuildGroup(group, rooms, wallHeight, wallColor, center, animState) {
-  while (group.children.length) {
-    const child = group.children.pop();
-    child.geometry?.dispose();
-    child.material?.dispose();
-  }
-  animState.meshes = [];
-  const t = 0.15;
-  const wallMat = new THREE.MeshStandardMaterial({ color: wallColor, roughness: 0.85 });
-
-  rooms.forEach((r) => {
-    const cx = r.gx + r.gw / 2 - center.x;
-    const cz = r.gy + r.gh / 2 - center.z;
-    const floorMat = new THREE.MeshStandardMaterial({ color: r.color, roughness: 0.9 });
-    const floor = new THREE.Mesh(new THREE.BoxGeometry(r.gw, 0.06, r.gh), floorMat);
-    floor.position.set(cx, 0.03, cz);
-    group.add(floor);
-
-    const addWall = (w, d, x, z) => {
-      const mesh = new THREE.Mesh(new THREE.BoxGeometry(Math.max(w, 0.05), wallHeight, Math.max(d, 0.05)), wallMat);
-      mesh.position.set(x, 0, z);
-      mesh.scale.y = 0.001;
-      group.add(mesh);
-      animState.meshes.push({ mesh, height: wallHeight });
-    };
-
-    const x0 = r.gx - center.x, x1 = r.gx + r.gw - center.x;
-    const z0 = r.gy - center.z, z1 = r.gy + r.gh - center.z;
-
-    addWall(r.gw + t, t, cx, z0);
-    const doorW = 1.0;
-    if (r.gw > doorW + 1) {
-      const segW = (r.gw - doorW) / 2;
-      addWall(segW, t, x0 + segW / 2, z1);
-      addWall(segW, t, x1 - segW / 2, z1);
-    } else {
-      addWall(r.gw + t, t, cx, z1);
-    }
-    addWall(t, r.gh, x0, cz);
-    addWall(t, r.gh, x1, cz);
-  });
-
-  animState.progress = 0;
-  animState.playing = true;
-}
-
 function Viewport3D({ rooms, wallHeight, wallColor, autoRotate }) {
   const mountRef = useRef(null);
   const stateRef = useRef({});
   const flagsRef = useRef({ autoRotate });
+  const textureCacheRef = useRef(new Map());
   const [resetKey, setResetKey] = useState(0);
 
   useEffect(() => { flagsRef.current.autoRotate = autoRotate; }, [autoRotate]);
@@ -120,11 +66,16 @@ function Viewport3D({ rooms, wallHeight, wallColor, autoRotate }) {
     const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 200);
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     mount.appendChild(renderer.domElement);
 
     scene.add(new THREE.HemisphereLight(0xbfd6ff, 0x1a1f2b, 0.95));
     const dir = new THREE.DirectionalLight(0xfff2e0, 1.0);
     dir.position.set(10, 18, 8);
+    dir.castShadow = true;
+    dir.shadow.mapSize.set(2048, 2048);
+    dir.shadow.bias = -0.0015;
     scene.add(dir);
 
     const ground = new THREE.Mesh(
@@ -133,6 +84,7 @@ function Viewport3D({ rooms, wallHeight, wallColor, autoRotate }) {
     );
     ground.rotation.x = -Math.PI / 2;
     ground.position.y = -0.03;
+    ground.receiveShadow = true;
     scene.add(ground);
 
     const grid = new THREE.GridHelper(300, 150, 0x2c4568, 0x16223a);
@@ -205,11 +157,12 @@ function Viewport3D({ rooms, wallHeight, wallColor, autoRotate }) {
         updateCamera();
       }
       if (animState.playing) {
-        animState.progress = Math.min(1, animState.progress + 0.035);
-        const eased = 1 - Math.pow(1 - animState.progress, 3);
-        animState.meshes.forEach(({ mesh, height }) => {
+        animState.progress = Math.min(1, animState.progress + 0.025);
+        animState.meshes.forEach(({ mesh, height, baseY, delay }) => {
+          const local = clamp((animState.progress - delay) / (1 - delay), 0, 1);
+          const eased = 1 - Math.pow(1 - local, 3);
           mesh.scale.y = Math.max(eased, 0.001);
-          mesh.position.y = (height * eased) / 2;
+          mesh.position.y = baseY + (height * eased) / 2;
         });
         if (animState.progress >= 1) animState.playing = false;
       }
@@ -217,7 +170,10 @@ function Viewport3D({ rooms, wallHeight, wallColor, autoRotate }) {
     }
     render();
 
-    stateRef.current = { group, orbit, updateCamera, animState, center: center0, defaultRadius: center0.radius };
+    stateRef.current = {
+      group, orbit, updateCamera, animState, dirLight: dir,
+      center: center0, defaultRadius: center0.radius,
+    };
 
     return () => {
       cancelAnimationFrame(raf);
@@ -235,7 +191,20 @@ function Viewport3D({ rooms, wallHeight, wallColor, autoRotate }) {
   useEffect(() => {
     const s = stateRef.current;
     if (!s.group) return;
-    rebuildGroup(s.group, rooms, wallHeight, wallColor, s.center, s.animState);
+    rebuildGroup(s.group, rooms, wallHeight, wallColor, s.center, s.animState, textureCacheRef.current);
+
+    if (s.dirLight) {
+      const radius = s.defaultRadius;
+      s.dirLight.position.set(radius * 0.6, Math.max(14, radius * 0.9), radius * 0.45);
+      const cam = s.dirLight.shadow.camera;
+      cam.left = -radius;
+      cam.right = radius;
+      cam.top = radius;
+      cam.bottom = -radius;
+      cam.near = 1;
+      cam.far = radius * 3 + wallHeight * 2;
+      cam.updateProjectionMatrix();
+    }
   }, [rooms, wallHeight, wallColor]);
 
   useEffect(() => {
