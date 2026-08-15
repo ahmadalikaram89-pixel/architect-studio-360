@@ -946,8 +946,8 @@ export default function ArchitectStudio({ session }) {
       .single();
     if (error) { console.error("insert opening failed", error); return; }
     setRooms((prev) => prev.map((r) => (r.id === roomId ? { ...r, openings: [...(r.openings || []), data] } : r)));
-    setPlaceMode(null);
-    hoverRef.current = null;
+    // نضل بوضع الإضافة (بلا setPlaceMode(null)) — تسمح بإضافة أكتر من باب/نافذة ورا بعض
+    // بلا ما يحتاج المستخدم يدوس الزر من جديد كل مرة؛ يطلع من الوضع يدوياً بدوسة تانية عالزر
     drawPlan();
   }
 
