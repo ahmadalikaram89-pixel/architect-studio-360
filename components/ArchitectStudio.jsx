@@ -1,15 +1,15 @@
 "use client";
 
-import React, { useEffect, useRef, useState, useCallback } from "react";
+import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import * as THREE from "three";
 import {
   Box, Layers, Trash2, RotateCcw, PlayCircle, PauseCircle, Ruler, Sparkles, X,
   MapPin, PencilRuler, Building2, FileCheck2, HardHat, ClipboardCheck, KeyRound,
-  CheckCircle2, Circle, Clock3, ChevronLeft, FolderPlus, ChevronDown, Plus, CalendarDays, UserRound,
+  CheckCircle2, Circle, Clock3, ChevronLeft, FolderPlus, ChevronDown, ChevronUp, Plus, CalendarDays, UserRound,
   Loader2, AlertTriangle, LogOut, AppWindow, DoorOpen, Printer,
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
-import { computeCenter, rebuildGroup, DOOR_W, WIN_W } from "../lib/build3d";
+import { computeCenter, rebuildGroup, DOOR_W, WIN_W, computeSharedBoundaries, sharedWallKeySet } from "../lib/build3d";
 
 const ROOM_COLORS = [
   { name: "طوبي", hex: "#C7714E" },
@@ -52,7 +52,7 @@ function pointSegDist(px, py, x1, y1, x2, y2) {
 
 // بيلاقي أقرب جدار (لأي غرفة) لنقطة ضغط/تمرير معيّنة، ضمن مسافة التقاط معقولة،
 // وبيتأكد إنه في مجال كافي للفتحة الجديدة بلا تداخل مع فتحة موجودة أصلاً
-function hitTestWalls(rooms, cx, cy, openingWidth) {
+function hitTestWalls(rooms, cx, cy, openingWidth, kind, interiorWalls) {
   let best = null;
   rooms.forEach((r) => {
     const walls = [
@@ -62,6 +62,7 @@ function hitTestWalls(rooms, cx, cy, openingWidth) {
       { wall: "right", x1: r.gx + r.gw, y1: r.gy, x2: r.gx + r.gw, y2: r.gy + r.gh, length: r.gh },
     ];
     walls.forEach((w) => {
+      if (kind === "window" && interiorWalls?.has(`${r.id}:${w.wall}`)) return;
       const { dist, t } = pointSegDist(cx, cy, w.x1, w.y1, w.x2, w.y2);
       if (!best || dist < best.dist) best = { dist, roomId: r.id, wall: w.wall, length: w.length, rawPosition: t * w.length };
     });
@@ -690,6 +691,10 @@ export default function ArchitectStudio({ session }) {
   const [placeMode, setPlaceMode] = useState(null); // null | 'door' | 'window'
   const [currentFloor, setCurrentFloor] = useState(0);
   const [printData, setPrintData] = useState(null);
+  const [confirmDeleteFloor, setConfirmDeleteFloor] = useState(false);
+
+  const sharedBoundaries = useMemo(() => computeSharedBoundaries(rooms), [rooms]);
+  const interiorWalls = useMemo(() => sharedWallKeySet(sharedBoundaries), [sharedBoundaries]);
 
   const canvasRef = useRef(null);
   const draftRef = useRef(null);
@@ -810,7 +815,7 @@ export default function ArchitectStudio({ session }) {
     if (placeMode) {
       const { x, y } = getMeterCoordsRaw(e);
       const width = placeMode === "door" ? DOOR_W : WIN_W;
-      const hit = hitTestWalls(rooms.filter((r) => (r.floor ?? 0) === currentFloor), x, y, width);
+      const hit = hitTestWalls(rooms.filter((r) => (r.floor ?? 0) === currentFloor), x, y, width, placeMode, interiorWalls);
       if (hit) placeOpening(hit.roomId, hit.wall, placeMode, hit.position);
       return;
     }
@@ -823,7 +828,7 @@ export default function ArchitectStudio({ session }) {
     if (placeMode) {
       const { x, y } = getMeterCoordsRaw(e);
       const width = placeMode === "door" ? DOOR_W : WIN_W;
-      hoverRef.current = hitTestWalls(rooms.filter((r) => (r.floor ?? 0) === currentFloor), x, y, width);
+      hoverRef.current = hitTestWalls(rooms.filter((r) => (r.floor ?? 0) === currentFloor), x, y, width, placeMode, interiorWalls);
       drawPlan();
       return;
     }
@@ -890,6 +895,43 @@ export default function ArchitectStudio({ session }) {
     setSelectedId(null);
     const { error } = await supabase.from("rooms").delete().eq("project_id", project.id).eq("floor", currentFloor);
     if (error) console.error("clear rooms failed", error);
+  }
+
+  async function deleteFloor() {
+    if (!project || currentFloor === 0) return;
+    const floorToDelete = currentFloor;
+    setRooms((prev) => prev.filter((r) => (r.floor ?? 0) !== floorToDelete));
+    setConfirmDeleteFloor(false);
+    setCurrentFloor(0);
+    const { error } = await supabase.from("rooms").delete().eq("project_id", project.id).eq("floor", floorToDelete);
+    if (error) console.error("delete floor failed", error);
+  }
+
+  const FLOOR_SWAP_SENTINEL = -999; // قيمة مستحيلة كرقم طابق حقيقي (الطوابق 0..FLOOR_CAP بس)
+
+  async function swapFloors(fromFloor, toFloor) {
+    if (!project || toFloor < 0 || toFloor > FLOOR_CAP || toFloor === fromFloor) return;
+
+    let res = await supabase.from("rooms").update({ floor: FLOOR_SWAP_SENTINEL }).eq("project_id", project.id).eq("floor", fromFloor);
+    if (res.error) { console.error("swap floor step1 failed", res.error); return; }
+
+    res = await supabase.from("rooms").update({ floor: fromFloor }).eq("project_id", project.id).eq("floor", toFloor);
+    if (res.error) {
+      console.error("swap floor step2 failed", res.error);
+      await supabase.from("rooms").update({ floor: fromFloor }).eq("project_id", project.id).eq("floor", FLOOR_SWAP_SENTINEL);
+      return;
+    }
+
+    res = await supabase.from("rooms").update({ floor: toFloor }).eq("project_id", project.id).eq("floor", FLOOR_SWAP_SENTINEL);
+    if (res.error) { console.error("swap floor step3 failed — rows stranded at sentinel floor", res.error); return; }
+
+    setRooms((prev) => prev.map((r) => {
+      const f = r.floor ?? 0;
+      if (f === fromFloor) return { ...r, floor: toFloor };
+      if (f === toFloor) return { ...r, floor: fromFloor };
+      return r;
+    }));
+    setCurrentFloor(toFloor);
   }
 
   async function loadSample() {
@@ -965,6 +1007,7 @@ export default function ArchitectStudio({ session }) {
     setPlaceMode(null);
     hoverRef.current = null;
     setSelectedId(null);
+    setConfirmDeleteFloor(false);
   }, [currentFloor]);
 
   useEffect(() => {
@@ -1154,6 +1197,33 @@ export default function ArchitectStudio({ session }) {
                       className="px-2.5 py-1.5 rounded-md text-slate-300 hover:text-white hover:bg-slate-700">
                       <Plus size={13} />
                     </button>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-1.5 mt-2">
+                  <button disabled={currentFloor === 0} onClick={() => swapFloors(currentFloor, currentFloor - 1)}
+                    title={`مبادلة مع ${floorLabel(currentFloor - 1)}`}
+                    className="flex items-center gap-1 text-[11px] font-semibold text-slate-400 hover:text-slate-200 disabled:opacity-30 disabled:cursor-not-allowed px-1.5 py-1">
+                    <ChevronDown size={12} />
+                  </button>
+                  <button disabled={currentFloor + 1 > FLOOR_CAP} onClick={() => swapFloors(currentFloor, currentFloor + 1)}
+                    title={`مبادلة مع ${floorLabel(currentFloor + 1)}`}
+                    className="flex items-center gap-1 text-[11px] font-semibold text-slate-400 hover:text-slate-200 disabled:opacity-30 disabled:cursor-not-allowed px-1.5 py-1">
+                    <ChevronUp size={12} />
+                  </button>
+
+                  {currentFloor !== 0 && (
+                    confirmDeleteFloor ? (
+                      <div className="flex items-center gap-1.5 text-xs">
+                        <span className="text-slate-400">متأكد؟</span>
+                        <button onClick={deleteFloor} className="px-2.5 py-1 rounded-md bg-red-600/80 hover:bg-red-600 font-semibold">نعم، احذف</button>
+                        <button onClick={() => setConfirmDeleteFloor(false)} className="px-2.5 py-1 rounded-md bg-slate-800 hover:bg-slate-700">تراجع</button>
+                      </div>
+                    ) : (
+                      <button onClick={() => setConfirmDeleteFloor(true)} className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 hover:text-red-400 px-2 py-1">
+                        <Trash2 size={12} /> حذف {floorLabel(currentFloor)}
+                      </button>
+                    )
                   )}
                 </div>
               </div>
