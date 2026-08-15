@@ -28,7 +28,7 @@ npm run dev
 
 إذا لسا ما شغّلتي ملف الجداول: افتحي مشروعك على supabase.com → **SQL Editor** → الصقي محتوى `supabase-schema.sql` واضغطي **RUN**.
 
-✅ التطبيق فيه تسجيل دخول بالإيميل وكلمة السر (Supabase Auth). كل مستخدم يشوف مشاريعه فقط — الجداول مؤمّنة بـ Row Level Security مربوطة بـ `user_id`.
+التطبيق فيه تسجيل دخول بالإيميل وكلمة السر (Supabase Auth). كل مستخدم يشوف مشاريعه فقط — الجداول مؤمّنة بـ Row Level Security مربوطة بـ `user_id`.
 
 ---
 
