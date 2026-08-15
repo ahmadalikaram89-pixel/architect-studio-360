@@ -65,6 +65,7 @@ create table if not exists rooms (
   has_roof boolean not null default true,   -- بلا سطح = شرفة/تراس مكشوف؛ true بس تحافظ على شكل الغرف القديمة، الغرف الجديدة تنضاف بـ false (يدوي)
   wall_height numeric,   -- NULL = ورّث ارتفاع المشروع (projects.wall_height) — تخصيص لكل طابق
   wall_color text,       -- NULL = ورّث لون المشروع (projects.wall_color) — تخصيص لكل طابق
+  points jsonb,          -- [{x,y},...] بالمتر لغرفة بشكل حر (جدران مايلة)؛ NULL = مستطيل عادي (gx/gy/gw/gh)
   created_at timestamptz not null default now()
 );
 
@@ -215,6 +216,12 @@ declare
   wpos numeric[];
   p numeric;
 begin
+  -- الغرف الحرة (points) جدرانها صلبة بس بالإصدار الأول — بلا أبواب/نوافذ تلقائية على
+  -- مربط الإحاطة (bounding box) يلي مش جدران حقيقية أصلاً
+  if new.points is not null then
+    return new;
+  end if;
+
   if new.gw > door_w + 0.4 then
     insert into openings (room_id, wall, kind, position)
     values (new.id, 'bottom', 'door', new.gw / 2);
