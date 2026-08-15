@@ -9,7 +9,7 @@ import {
   Loader2, AlertTriangle, LogOut, AppWindow, DoorOpen, Printer, Folders,
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
-import { computeCenter, rebuildGroup, DOOR_W, WIN_W, computeSharedBoundaries, sharedWallKeySet } from "../lib/build3d";
+import { computeCenter, rebuildGroup, DOOR_W, WIN_W, computeSharedBoundaries, sharedWallRanges } from "../lib/build3d";
 
 const ROOM_COLORS = [
   { name: "طوبي", hex: "#C7714E" },
@@ -52,7 +52,7 @@ function pointSegDist(px, py, x1, y1, x2, y2) {
 
 // بيلاقي أقرب جدار (لأي غرفة) لنقطة ضغط/تمرير معيّنة، ضمن مسافة التقاط معقولة،
 // وبيتأكد إنه في مجال كافي للفتحة الجديدة بلا تداخل مع فتحة موجودة أصلاً
-function hitTestWalls(rooms, cx, cy, openingWidth, kind, interiorWalls) {
+function hitTestWalls(rooms, cx, cy, openingWidth, kind, sharedRanges) {
   let best = null;
   rooms.forEach((r) => {
     const walls = [
@@ -62,9 +62,13 @@ function hitTestWalls(rooms, cx, cy, openingWidth, kind, interiorWalls) {
       { wall: "right", x1: r.gx + r.gw, y1: r.gy, x2: r.gx + r.gw, y2: r.gy + r.gh, length: r.gh },
     ];
     walls.forEach((w) => {
-      if (kind === "window" && interiorWalls?.has(`${r.id}:${w.wall}`)) return;
       const { dist, t } = pointSegDist(cx, cy, w.x1, w.y1, w.x2, w.y2);
-      if (!best || dist < best.dist) best = { dist, roomId: r.id, wall: w.wall, length: w.length, rawPosition: t * w.length };
+      const rawPosition = t * w.length;
+      if (kind === "window") {
+        const ranges = sharedRanges?.get(`${r.id}:${w.wall}`);
+        if (ranges?.some((rg) => rawPosition >= rg.start - 0.001 && rawPosition <= rg.end + 0.001)) return;
+      }
+      if (!best || dist < best.dist) best = { dist, roomId: r.id, wall: w.wall, length: w.length, rawPosition };
     });
   });
 
@@ -711,7 +715,7 @@ export default function ArchitectStudio({ session }) {
   const [confirmDeleteFloor, setConfirmDeleteFloor] = useState(false);
 
   const sharedBoundaries = useMemo(() => computeSharedBoundaries(rooms), [rooms]);
-  const interiorWalls = useMemo(() => sharedWallKeySet(sharedBoundaries), [sharedBoundaries]);
+  const sharedRanges = useMemo(() => sharedWallRanges(sharedBoundaries), [sharedBoundaries]);
 
   const canvasRef = useRef(null);
   const draftRef = useRef(null);
@@ -832,7 +836,7 @@ export default function ArchitectStudio({ session }) {
     if (placeMode) {
       const { x, y } = getMeterCoordsRaw(e);
       const width = placeMode === "door" ? DOOR_W : WIN_W;
-      const hit = hitTestWalls(rooms.filter((r) => (r.floor ?? 0) === currentFloor), x, y, width, placeMode, interiorWalls);
+      const hit = hitTestWalls(rooms.filter((r) => (r.floor ?? 0) === currentFloor), x, y, width, placeMode, sharedRanges);
       if (hit) placeOpening(hit.roomId, hit.wall, placeMode, hit.position);
       return;
     }
@@ -845,7 +849,7 @@ export default function ArchitectStudio({ session }) {
     if (placeMode) {
       const { x, y } = getMeterCoordsRaw(e);
       const width = placeMode === "door" ? DOOR_W : WIN_W;
-      hoverRef.current = hitTestWalls(rooms.filter((r) => (r.floor ?? 0) === currentFloor), x, y, width, placeMode, interiorWalls);
+      hoverRef.current = hitTestWalls(rooms.filter((r) => (r.floor ?? 0) === currentFloor), x, y, width, placeMode, sharedRanges);
       drawPlan();
       return;
     }
