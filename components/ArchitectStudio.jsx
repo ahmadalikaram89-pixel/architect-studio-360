@@ -6,7 +6,7 @@ import {
   Box, Layers, Trash2, RotateCcw, PlayCircle, PauseCircle, Ruler, Sparkles, X,
   MapPin, PencilRuler, Building2, FileCheck2, HardHat, ClipboardCheck, KeyRound,
   CheckCircle2, Circle, Clock3, ChevronLeft, FolderPlus, ChevronDown, ChevronUp, Plus, CalendarDays, UserRound,
-  Loader2, AlertTriangle, LogOut, AppWindow, DoorOpen, Printer,
+  Loader2, AlertTriangle, LogOut, AppWindow, DoorOpen, Printer, Folders,
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 import { computeCenter, rebuildGroup, DOOR_W, WIN_W, computeSharedBoundaries, sharedWallKeySet } from "../lib/build3d";
@@ -357,7 +357,7 @@ function Viewport3D({ rooms, wallHeight, wallColor, autoRotate }) {
 }
 
 // ---------------- شاشة إنشاء مشروع جديد ----------------
-function ProjectSetup({ onCreate, onSignOut, userEmail }) {
+function ProjectSetup({ onCreate, onSignOut, userEmail, projectsList, onOpenProject }) {
   const [name, setName] = useState("");
   const [client, setClient] = useState("");
   const [landType, setLandType] = useState(LAND_TYPES[0]);
@@ -400,6 +400,21 @@ function ProjectSetup({ onCreate, onSignOut, userEmail }) {
         </div>
 
         {userEmail && <p className="text-[11px] text-slate-500 mb-3 -mt-3 font-mono truncate" dir="ltr">{userEmail}</p>}
+
+        {projectsList && projectsList.length > 0 && (
+          <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4 mb-4">
+            <p className="flex items-center gap-1.5 text-xs font-bold text-slate-300 mb-2"><Folders size={14} /> مشاريعك السابقة</p>
+            <div className="space-y-1.5 max-h-48 overflow-y-auto">
+              {projectsList.map((p) => (
+                <button key={p.id} onClick={() => onOpenProject(p.id)}
+                  className="w-full text-right px-3 py-2 rounded-md text-xs bg-slate-800/60 hover:bg-slate-800 border border-slate-700 transition-colors">
+                  <p className="font-semibold text-slate-100 truncate">{p.name}</p>
+                  <p className="text-[10px] text-slate-500 font-mono truncate">{p.land_type} · {p.city || "—"}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-5 space-y-4">
           <div className="flex items-center gap-2 text-cyan-400 text-sm font-bold">
@@ -676,6 +691,8 @@ function PhaseTracker({ phases, setPhases, designProgress, onOpenDesign }) {
 export default function ArchitectStudio({ session }) {
   const user = session.user;
   const [project, setProject] = useState(null);
+  const [projectsList, setProjectsList] = useState([]);
+  const [switcherOpen, setSwitcherOpen] = useState(false);
   const [phases, setPhases] = useState([]);
   const [view, setView] = useState("phases"); // 'phases' | 'plan' | '3d'
   const [confirmReset, setConfirmReset] = useState(false);
@@ -964,19 +981,19 @@ export default function ArchitectStudio({ session }) {
 
   useEffect(() => {
     let cancelled = false;
-    async function loadExistingProject() {
-      const { data: proj, error } = await supabase
+    async function loadInitial() {
+      const { data: projects, error } = await supabase
         .from("projects")
         .select("*")
-        .order("updated_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+        .order("updated_at", { ascending: false });
       if (cancelled) return;
       if (error) {
-        setLoadError(error.message || "تعذر تحميل المشروع");
+        setLoadError(error.message || "تعذر تحميل مشاريعك");
         setInitializing(false);
         return;
       }
+      setProjectsList(projects || []);
+      const proj = projects && projects[0];
       if (proj) {
         const [phasesData, roomsRes] = await Promise.all([
           fetchPhasesForProject(proj.id),
@@ -991,7 +1008,7 @@ export default function ArchitectStudio({ session }) {
       }
       setInitializing(false);
     }
-    loadExistingProject();
+    loadInitial();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -1051,14 +1068,37 @@ export default function ArchitectStudio({ session }) {
 
     const phasesData = await fetchPhasesForProject(proj.id);
 
+    setProjectsList((prev) => [proj, ...prev]);
     setProject(proj);
     setPhases(phasesData);
     setRooms([]);
     setWallHeight(proj.wall_height);
     setWallColor(proj.wall_color);
     setSelectedId(null);
+    setCurrentFloor(0);
     setView("phases");
     setLoadError("");
+  }
+
+  async function loadProjectById(projId) {
+    const proj = projectsList.find((p) => p.id === projId);
+    if (!proj || proj.id === project?.id) { setSwitcherOpen(false); return; }
+    setInitializing(true);
+    setSwitcherOpen(false);
+    const [phasesData, roomsRes] = await Promise.all([
+      fetchPhasesForProject(proj.id),
+      supabase.from("rooms").select("*, openings(*)").eq("project_id", proj.id),
+    ]);
+    setProject(proj);
+    setPhases(phasesData);
+    setRooms(roomsRes.data || []);
+    setWallHeight(proj.wall_height);
+    setWallColor(proj.wall_color);
+    setSelectedId(null);
+    setCurrentFloor(0);
+    setConfirmReset(false);
+    setView("phases");
+    setInitializing(false);
   }
 
   async function persistWallSettings(fields) {
@@ -1107,7 +1147,7 @@ export default function ArchitectStudio({ session }) {
   }
 
   if (!project) {
-    return <ProjectSetup onCreate={handleCreateProject} onSignOut={signOut} userEmail={user.email} />;
+    return <ProjectSetup onCreate={handleCreateProject} onSignOut={signOut} userEmail={user.email} projectsList={projectsList} onOpenProject={loadProjectById} />;
   }
 
   const floors = [...new Set([0, currentFloor, ...rooms.map((r) => r.floor ?? 0)])].sort((a, b) => a - b);
@@ -1150,6 +1190,27 @@ export default function ArchitectStudio({ session }) {
         </div>
 
         <div className="flex items-center gap-1">
+          {projectsList.length > 1 && (
+            <div className="relative">
+              <button onClick={() => setSwitcherOpen((o) => !o)} className="flex items-center gap-1.5 text-xs font-semibold text-slate-400 hover:text-slate-200 px-2 py-1.5">
+                <Folders size={13} /> مشاريعي
+              </button>
+              {switcherOpen && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setSwitcherOpen(false)} />
+                  <div className="absolute left-0 top-full mt-1 w-64 max-h-80 overflow-y-auto bg-slate-900 border border-slate-700 rounded-lg shadow-2xl z-20 p-1.5">
+                    {projectsList.map((p) => (
+                      <button key={p.id} onClick={() => loadProjectById(p.id)}
+                        className={`w-full text-right px-2.5 py-2 rounded-md text-xs transition-colors ${p.id === project.id ? "bg-cyan-500/20 text-cyan-300" : "hover:bg-slate-800 text-slate-200"}`}>
+                        <p className="font-semibold truncate">{p.name}</p>
+                        <p className="text-[10px] text-slate-500 font-mono truncate">{p.land_type} · {p.city || "—"}</p>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
           {confirmReset ? (
             <div className="flex items-center gap-1.5 text-xs">
               <span className="text-slate-400">متأكد؟</span>
