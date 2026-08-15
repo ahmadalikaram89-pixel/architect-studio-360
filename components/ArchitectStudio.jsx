@@ -9,7 +9,7 @@ import {
   Loader2, AlertTriangle, LogOut, AppWindow, DoorOpen, Printer, Folders, Move, Armchair,
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
-import { computeCenter, rebuildGroup, DOOR_W, WIN_W, computeSharedBoundaries, sharedWallRanges, FURNITURE_KINDS, computeFloorBaseYMap, stairFootprint } from "../lib/build3d";
+import { computeCenter, rebuildGroup, DOOR_W, WIN_W, computeSharedBoundaries, sharedWallRanges, FURNITURE_KINDS, computeFloorBaseYMap, stairFootprint, roomArea } from "../lib/build3d";
 
 const ROOM_COLORS = [
   { name: "طوبي", hex: "#C7714E" },
@@ -56,6 +56,7 @@ function pointSegDist(px, py, x1, y1, x2, y2) {
 function hitTestWalls(rooms, cx, cy, openingWidth, kind, sharedRanges, excludeOpeningId) {
   let best = null;
   rooms.forEach((r) => {
+    if (r.points) return; // الغرف الحرة جدرانها صلبة بلا أبواب/نوافذ بالإصدار الأول
     const walls = [
       { wall: "top", x1: r.gx, y1: r.gy, x2: r.gx + r.gw, y2: r.gy, length: r.gw },
       { wall: "bottom", x1: r.gx, y1: r.gy + r.gh, x2: r.gx + r.gw, y2: r.gy + r.gh, length: r.gw },
@@ -149,7 +150,7 @@ function hitTestFurniture(rooms, cx, cy) {
 // بيحصر موضعها جوّا حدود الغرفة، ويرفض لو بتتراكب مع قطعة موجودة أصلاً (باستثناء excludeId
 // أثناء النقل) أو لو القطعة أكبر من الغرفة
 function hitTestRoomForFurniture(rooms, cx, cy, kind, excludeId) {
-  const room = rooms.find((r) => cx >= r.gx && cx <= r.gx + r.gw && cy >= r.gy && cy <= r.gy + r.gh);
+  const room = rooms.find((r) => !r.points && cx >= r.gx && cx <= r.gx + r.gw && cy >= r.gy && cy <= r.gy + r.gh);
   if (!room) return null;
   const { w, d } = furnitureFootprint(kind, 0);
   if (room.gw < w || room.gh < d) return null;
@@ -240,6 +241,28 @@ function drawFloorPlanImage(floorRoomsList, gridW, gridH) {
 
   floorRoomsList.forEach((r) => {
     const x = r.gx * PPM, y = r.gy * PPM, rw = r.gw * PPM, rh = r.gh * PPM;
+
+    if (r.points && r.points.length >= 3) {
+      ctx.beginPath();
+      r.points.forEach((p, i) => {
+        if (i === 0) ctx.moveTo(p.x * PPM, p.y * PPM);
+        else ctx.lineTo(p.x * PPM, p.y * PPM);
+      });
+      ctx.closePath();
+      ctx.fillStyle = r.color + "25";
+      ctx.fill();
+      ctx.strokeStyle = r.color;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.fillStyle = "#1E293B";
+      ctx.font = "700 13px Tajawal, sans-serif";
+      ctx.fillText(r.name, x + 8, y + 20);
+      ctx.fillStyle = "#64748B";
+      ctx.font = "11px 'IBM Plex Mono', monospace";
+      ctx.fillText(`${roomArea(r).toFixed(1)} m²`, x + 8, y + 36);
+      return;
+    }
+
     ctx.fillStyle = r.color + "25";
     ctx.fillRect(x, y, rw, rh);
     ctx.strokeStyle = r.color;
@@ -819,6 +842,50 @@ function PhaseTracker({ phases, setPhases, designProgress, onOpenDesign }) {
   );
 }
 
+// لوحة قياسات دقيقة لغرفة مستطيلة محددة — 4 حقول رقمية تكتب مباشرة على gx/gy/gw/gh
+// (بدل السحب بس)؛ حالة محلية بتنعكس من الغرفة عند تغيّر id/قيمها (نفس نمط owner/notes
+// بـ PhaseCard)، والكتابة الفعلية لقاعدة البيانات تصير عند الخروج من الحقل (onBlur)
+function PreciseMeasurePanel({ room, onCommit }) {
+  const [local, setLocal] = useState({ gx: room.gx, gy: room.gy, gw: room.gw, gh: room.gh });
+
+  useEffect(() => {
+    setLocal({ gx: room.gx, gy: room.gy, gw: room.gw, gh: room.gh });
+  }, [room.id, room.gx, room.gy, room.gw, room.gh]);
+
+  function field(label, key, min) {
+    return (
+      <div>
+        <label className="text-[11px] text-slate-400 block mb-1">{label}</label>
+        <input
+          type="number"
+          step="0.05"
+          min={min}
+          value={local[key]}
+          onChange={(e) => setLocal((l) => ({ ...l, [key]: e.target.value }))}
+          onBlur={(e) => {
+            const v = Math.max(min, parseFloat(e.target.value) || min);
+            setLocal((l) => ({ ...l, [key]: v }));
+            if (v !== room[key]) onCommit(key, v);
+          }}
+          className="w-full bg-slate-950 border border-slate-700 rounded-md px-2 py-1.5 text-xs outline-none focus:border-cyan-500 font-mono"
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <p className="text-xs font-semibold text-slate-400 mb-2 flex items-center gap-1.5"><Ruler size={13} /> قياسات دقيقة</p>
+      <div className="grid grid-cols-2 gap-2">
+        {field("X", "gx", 0)}
+        {field("Y", "gy", 0)}
+        {field("العرض", "gw", 0.3)}
+        {field("العمق", "gh", 0.3)}
+      </div>
+    </div>
+  );
+}
+
 // ---------------- التطبيق الرئيسي ----------------
 export default function ArchitectStudio({ session }) {
   const user = session.user;
@@ -848,6 +915,8 @@ export default function ArchitectStudio({ session }) {
   const [currentFloor, setCurrentFloor] = useState(0);
   const [printData, setPrintData] = useState(null);
   const [confirmDeleteFloor, setConfirmDeleteFloor] = useState(false);
+  const [snapEnabled, setSnapEnabled] = useState(true);
+  const [polygonDrawMode, setPolygonDrawMode] = useState(false);
 
   useEffect(() => {
     setSelectedOpening(null);
@@ -860,16 +929,22 @@ export default function ArchitectStudio({ session }) {
       setMovingOpeningId(null);
       setMovingFurnitureId(null);
       setMovingStairId(null);
+    } else {
+      setPolygonDrawMode(false);
+      polygonDraftRef.current = [];
+      polygonHoverRef.current = null;
     }
   }, [placeMode]);
 
-  const sharedBoundaries = useMemo(() => computeSharedBoundaries(rooms), [rooms]);
+  const sharedBoundaries = useMemo(() => computeSharedBoundaries(rooms.filter((r) => !r.points)), [rooms]);
   const sharedRanges = useMemo(() => sharedWallRanges(sharedBoundaries), [sharedBoundaries]);
 
   const canvasRef = useRef(null);
   const draftRef = useRef(null);
   const draggingRef = useRef(false);
   const hoverRef = useRef(null); // {roomId, wall, position} أثناء وضع الإضافة
+  const polygonDraftRef = useRef([]); // نقاط الشكل الحر المتراكمة أثناء الرسم (بالمتر)
+  const polygonHoverRef = useRef(null); // موضع الفأرة الحالي — لرسم الخط "المطاطي" لآخر نقطة
 
   const gridW = project ? clamp(project.width, 6, 60) : 20;
   const gridH = project ? clamp(project.depth, 6, 60) : 15;
@@ -904,6 +979,28 @@ export default function ArchitectStudio({ session }) {
 
     floorRoomsList.forEach((r) => {
       const x = r.gx * PPM, y = r.gy * PPM, rw = r.gw * PPM, rh = r.gh * PPM;
+
+      if (r.points && r.points.length >= 3) {
+        ctx.beginPath();
+        r.points.forEach((p, i) => {
+          if (i === 0) ctx.moveTo(p.x * PPM, p.y * PPM);
+          else ctx.lineTo(p.x * PPM, p.y * PPM);
+        });
+        ctx.closePath();
+        ctx.fillStyle = r.color + "30";
+        ctx.fill();
+        ctx.strokeStyle = r.id === selectedId ? "#22D3EE" : r.color;
+        ctx.lineWidth = r.id === selectedId ? 3 : 2;
+        ctx.stroke();
+        ctx.fillStyle = "#EAF0F8";
+        ctx.font = "700 13px Tajawal, sans-serif";
+        ctx.fillText(r.name, x + 8, y + 20);
+        ctx.fillStyle = "#8DA0BC";
+        ctx.font = "11px 'IBM Plex Mono', monospace";
+        ctx.fillText(`${roomArea(r).toFixed(1)} م²`, x + 8, y + 36);
+        return;
+      }
+
       ctx.fillStyle = r.color + "30";
       ctx.fillRect(x, y, rw, rh);
       ctx.strokeStyle = r.id === selectedId ? "#22D3EE" : r.color;
@@ -972,6 +1069,30 @@ export default function ArchitectStudio({ session }) {
       ctx.setLineDash([]);
     }
 
+    if (polygonDrawMode) {
+      const pts = polygonDraftRef.current;
+      if (pts.length > 0) {
+        ctx.setLineDash([6, 4]);
+        ctx.strokeStyle = "#22D3EE";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        pts.forEach((p, i) => {
+          if (i === 0) ctx.moveTo(p.x * PPM, p.y * PPM);
+          else ctx.lineTo(p.x * PPM, p.y * PPM);
+        });
+        const hov = polygonHoverRef.current;
+        if (hov) ctx.lineTo(hov.x * PPM, hov.y * PPM);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        pts.forEach((p) => {
+          ctx.beginPath();
+          ctx.arc(p.x * PPM, p.y * PPM, 4, 0, Math.PI * 2);
+          ctx.fillStyle = "#22D3EE";
+          ctx.fill();
+        });
+      }
+    }
+
     if (placeMode && hoverRef.current) {
       const room = floorRoomsList.find((r) => r.id === hoverRef.current.roomId);
       if (room) {
@@ -987,7 +1108,7 @@ export default function ArchitectStudio({ session }) {
         ctx.globalAlpha = 1;
       }
     }
-  }, [rooms, selectedId, selectedFurniture, stairsList, selectedStair, wallHeight, gridW, gridH, placeMode, currentFloor]);
+  }, [rooms, selectedId, selectedFurniture, stairsList, selectedStair, wallHeight, gridW, gridH, placeMode, currentFloor, polygonDrawMode]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -1014,7 +1135,26 @@ export default function ArchitectStudio({ session }) {
     return { x: clamp(px / PPM, 0, gridW), y: clamp(py / PPM, 0, gridH) };
   }
 
+  // إحداثيات الرسم (مستطيل أو شكل حر) — ملتصقة بالشبكة أو خام حسب مفتاح "الصق بالشبكة"
+  function getMeterCoordsForDraw(e) {
+    return snapEnabled ? getMeterCoords(e) : getMeterCoordsRaw(e);
+  }
+
   function handlePointerDown(e) {
+    if (polygonDrawMode) {
+      const { x, y } = getMeterCoordsForDraw(e);
+      const pts = polygonDraftRef.current;
+      if (pts.length >= 3) {
+        const first = pts[0];
+        if (Math.hypot(x - first.x, y - first.y) < 0.3) {
+          finishPolygonDraw();
+          return;
+        }
+      }
+      polygonDraftRef.current = [...pts, { x, y }];
+      drawPlan();
+      return;
+    }
     if (placeMode?.startsWith("furniture:")) {
       const kind = placeMode.slice("furniture:".length);
       const { x, y } = getMeterCoordsRaw(e);
@@ -1067,12 +1207,17 @@ export default function ArchitectStudio({ session }) {
     setSelectedOpening(null);
     setSelectedFurniture(null);
     setSelectedStair(null);
-    const { x, y } = getMeterCoords(e);
+    const { x, y } = getMeterCoordsForDraw(e);
     draggingRef.current = true;
     draftRef.current = { sx: x, sy: y, ex: x, ey: y };
     setSelectedId(null);
   }
   function handlePointerMove(e) {
+    if (polygonDrawMode) {
+      polygonHoverRef.current = getMeterCoordsForDraw(e);
+      drawPlan();
+      return;
+    }
     if (placeMode?.startsWith("furniture:")) {
       const kind = placeMode.slice("furniture:".length);
       const { x, y } = getMeterCoordsRaw(e);
@@ -1096,7 +1241,7 @@ export default function ArchitectStudio({ session }) {
       return;
     }
     if (!draggingRef.current) return;
-    const { x, y } = getMeterCoords(e);
+    const { x, y } = getMeterCoordsForDraw(e);
     draftRef.current = { ...draftRef.current, ex: x, ey: y };
     drawPlan();
   }
@@ -1129,6 +1274,59 @@ export default function ArchitectStudio({ session }) {
     } else {
       drawPlan();
     }
+  }
+
+  // بيقفل رسم الشكل الحر — بيدرج غرفة جديدة بالنقاط الفعلية + مربط إحاطة (bounding box)
+  // محسوب منها لتوافق كل الكود يلي بيقرأ gx/gy/gw/gh (نفس نمط وراثة ارتفاع/لون الجدار
+  // بإنشاء الغرف المستطيلة العادية)
+  async function finishPolygonDraw() {
+    const pts = polygonDraftRef.current;
+    if (pts.length < 3 || !project) return;
+    const xs = pts.map((p) => p.x), ys = pts.map((p) => p.y);
+    const gx = Math.min(...xs), gy = Math.min(...ys);
+    const gw = Math.max(0.1, Math.max(...xs) - gx);
+    const gh = Math.max(0.1, Math.max(...ys) - gy);
+    const floorRoomsNow = rooms.filter((r) => (r.floor ?? 0) === currentFloor);
+    polygonDraftRef.current = [];
+    polygonHoverRef.current = null;
+    setPolygonDrawMode(false);
+    const { data, error } = await supabase
+      .from("rooms")
+      .insert({
+        project_id: project.id, name: ROOM_TYPES[0], gx, gy, gw, gh, color: roomColor, floor: currentFloor,
+        has_roof: false, points: pts,
+        wall_height: floorRoomsNow[0]?.wall_height ?? null,
+        wall_color: floorRoomsNow[0]?.wall_color ?? null,
+      })
+      .select("*, openings(*), furniture(*)")
+      .single();
+    if (error) { console.error("insert polygon room failed", error); drawPlan(); return; }
+    setRooms((prev) => [...prev, data]);
+    drawPlan();
+  }
+
+  function cancelPolygonDraw() {
+    polygonDraftRef.current = [];
+    polygonHoverRef.current = null;
+    setPolygonDrawMode(false);
+    drawPlan();
+  }
+
+  function startPolygonDraw() {
+    setPlaceMode(null);
+    setSelectedOpening(null);
+    setSelectedFurniture(null);
+    setSelectedStair(null);
+    setSelectedId(null);
+    polygonDraftRef.current = [];
+    polygonHoverRef.current = null;
+    setPolygonDrawMode(true);
+  }
+
+  async function updateRoomBounds(id, patch) {
+    setRooms((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+    const { error } = await supabase.from("rooms").update(patch).eq("id", id);
+    if (error) console.error("update room bounds failed", error);
   }
 
   async function placeOpening(roomId, wall, kind, position) {
@@ -1420,12 +1618,18 @@ export default function ArchitectStudio({ session }) {
     if (view !== "plan") {
       setPlaceMode(null);
       hoverRef.current = null;
+      setPolygonDrawMode(false);
+      polygonDraftRef.current = [];
+      polygonHoverRef.current = null;
     }
   }, [view]);
 
   useEffect(() => {
     setPlaceMode(null);
     hoverRef.current = null;
+    setPolygonDrawMode(false);
+    polygonDraftRef.current = [];
+    polygonHoverRef.current = null;
     setSelectedId(null);
     setConfirmDeleteFloor(false);
   }, [currentFloor]);
@@ -1570,7 +1774,7 @@ export default function ArchitectStudio({ session }) {
 
   const floors = [...new Set([0, currentFloor, ...rooms.map((r) => r.floor ?? 0)])].sort((a, b) => a - b);
   const floorRooms = rooms.filter((r) => (r.floor ?? 0) === currentFloor);
-  const totalArea = floorRooms.reduce((s, r) => s + r.gw * r.gh, 0);
+  const totalArea = floorRooms.reduce((s, r) => s + roomArea(r), 0);
 
   return (
     <>
@@ -1719,6 +1923,40 @@ export default function ArchitectStudio({ session }) {
                   <Trash2 size={13}/>
                 </button>
               </div>
+
+              {view === "plan" && (
+                <>
+                  <button
+                    onClick={() => setSnapEnabled((s) => !s)}
+                    className={`w-full flex items-center justify-center gap-1.5 text-xs font-semibold rounded-md py-2 border mt-2 transition-colors ${snapEnabled ? "bg-slate-800 hover:bg-slate-700 border-slate-700" : "bg-cyan-500 text-slate-950 border-cyan-500"}`}
+                  >
+                    <Ruler size={13}/> {snapEnabled ? "الصق بالشبكة: مفعّل" : "الصق بالشبكة: معطّل (دقة حرة)"}
+                  </button>
+
+                  {polygonDrawMode ? (
+                    <div className="flex gap-2 mt-2">
+                      <button onClick={finishPolygonDraw} className="flex-1 flex items-center justify-center gap-1.5 text-xs font-semibold bg-cyan-500 text-slate-950 rounded-md py-2 transition-colors">
+                        إنهاء الرسم
+                      </button>
+                      <button onClick={cancelPolygonDraw} className="flex-1 flex items-center justify-center gap-1.5 text-xs font-semibold bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-md py-2 transition-colors">
+                        إلغاء
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={startPolygonDraw}
+                      className="w-full flex items-center justify-center gap-1.5 text-xs font-semibold bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-md py-2 mt-2 transition-colors"
+                    >
+                      <PencilRuler size={13}/> ارسم شكل حر
+                    </button>
+                  )}
+                  {polygonDrawMode && (
+                    <p className="text-[11px] text-cyan-300 mt-2 leading-relaxed">
+                      دوس نقطة نقطة لرسم أضلاع الشكل. دوس قريب من أول نقطة أو زر "إنهاء الرسم" لإغلاقه (3 نقاط ع الأقل).
+                    </p>
+                  )}
+                </>
+              )}
             </div>
 
             {view === "plan" && (
@@ -1843,6 +2081,12 @@ export default function ArchitectStudio({ session }) {
               </div>
             )}
 
+            {view === "plan" && (() => {
+              const room = floorRooms.find((r) => r.id === selectedId);
+              if (!room || room.points) return null;
+              return <PreciseMeasurePanel room={room} onCommit={(key, v) => updateRoomBounds(room.id, { [key]: v })} />;
+            })()}
+
             {view === "3d" && (
               <div>
                 <p className="text-xs font-semibold text-slate-400 mb-2">جولة 360°</p>
@@ -1898,7 +2142,7 @@ export default function ArchitectStudio({ session }) {
                         >
                           {ROOM_TYPES.map((t) => <option key={t} value={t} className="bg-slate-900">{t}</option>)}
                         </select>
-                        <p className="text-[10px] font-mono text-slate-500">{(r.gw * r.gh).toFixed(1)} م²</p>
+                        <p className="text-[10px] font-mono text-slate-500">{roomArea(r).toFixed(1)} م²</p>
                       </div>
                     </div>
                     <button onClick={(e) => { e.stopPropagation(); deleteRoom(r.id); }} className="text-slate-500 hover:text-red-400 shrink-0">
@@ -2031,8 +2275,8 @@ export default function ArchitectStudio({ session }) {
                   {f.rooms.map((r) => (
                     <tr key={r.id} style={{ borderBottom: "1px solid #F1F5F9" }}>
                       <td style={{ padding: "4px 6px" }}>{r.name}</td>
-                      <td style={{ padding: "4px 6px" }}>{r.gw.toFixed(1)} × {r.gh.toFixed(1)} م</td>
-                      <td style={{ padding: "4px 6px" }}>{(r.gw * r.gh).toFixed(1)} م²</td>
+                      <td style={{ padding: "4px 6px" }}>{r.points ? "شكل حر" : `${r.gw.toFixed(1)} × ${r.gh.toFixed(1)} م`}</td>
+                      <td style={{ padding: "4px 6px" }}>{roomArea(r).toFixed(1)} م²</td>
                     </tr>
                   ))}
                   {f.rooms.length === 0 && (
