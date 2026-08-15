@@ -6,7 +6,7 @@ import {
   Box, Layers, Trash2, RotateCcw, PlayCircle, PauseCircle, Ruler, Sparkles, X,
   MapPin, PencilRuler, Building2, FileCheck2, HardHat, ClipboardCheck, KeyRound,
   CheckCircle2, Circle, Clock3, ChevronLeft, FolderPlus, ChevronDown, ChevronUp, Plus, CalendarDays, UserRound,
-  Loader2, AlertTriangle, LogOut, AppWindow, DoorOpen, Printer, Folders,
+  Loader2, AlertTriangle, LogOut, AppWindow, DoorOpen, Printer, Folders, Move,
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 import { computeCenter, rebuildGroup, DOOR_W, WIN_W, computeSharedBoundaries, sharedWallRanges } from "../lib/build3d";
@@ -41,6 +41,7 @@ function floorLabel(n) {
 const FLOOR_CAP = 12;
 
 const WALL_SNAP_TOLERANCE = 0.3; // بالمتر — كافي لالتقاط جدار بسماكة 0.15م بدون ما يلتقط جدار غرفة تانية غلط
+const OPENING_HIT_TOLERANCE = 0.22; // بالمتر — لالتقاط النقر على علامة باب/نافذة موجودة لتحديدها
 
 function pointSegDist(px, py, x1, y1, x2, y2) {
   const dx = x2 - x1, dy = y2 - y1;
@@ -52,7 +53,7 @@ function pointSegDist(px, py, x1, y1, x2, y2) {
 
 // بيلاقي أقرب جدار (لأي غرفة) لنقطة ضغط/تمرير معيّنة، ضمن مسافة التقاط معقولة،
 // وبيتأكد إنه في مجال كافي للفتحة الجديدة بلا تداخل مع فتحة موجودة أصلاً
-function hitTestWalls(rooms, cx, cy, openingWidth, kind, sharedRanges) {
+function hitTestWalls(rooms, cx, cy, openingWidth, kind, sharedRanges, excludeOpeningId) {
   let best = null;
   rooms.forEach((r) => {
     const walls = [
@@ -79,7 +80,7 @@ function hitTestWalls(rooms, cx, cy, openingWidth, kind, sharedRanges) {
   const position = clamp(best.rawPosition, half, best.length - half);
 
   const room = rooms.find((r) => r.id === best.roomId);
-  const existing = (room.openings || []).filter((o) => o.wall === best.wall);
+  const existing = (room.openings || []).filter((o) => o.wall === best.wall && o.id !== excludeOpeningId);
   const overlaps = existing.some((o) => {
     const ow = o.kind === "door" ? DOOR_W : WIN_W;
     return position - half < o.position + ow / 2 && position + half > o.position - ow / 2;
@@ -87,6 +88,21 @@ function hitTestWalls(rooms, cx, cy, openingWidth, kind, sharedRanges) {
   if (overlaps) return null;
 
   return { roomId: best.roomId, wall: best.wall, position };
+}
+
+// بيلاقي أقرب فتحة (باب/نافذة) موجودة لنقطة نقر معيّنة، لتحديدها (حذف/نقل)
+function hitTestOpenings(rooms, cx, cy) {
+  let best = null;
+  rooms.forEach((r) => {
+    (r.openings || []).forEach((o) => {
+      const width = o.kind === "door" ? DOOR_W : WIN_W;
+      const m = openingMarkPoints(r, o.wall, o.position, width);
+      const { dist } = pointSegDist(cx, cy, m.x1, m.y1, m.x2, m.y2);
+      if (!best || dist < best.dist) best = { dist, roomId: r.id, id: o.id, wall: o.wall, position: o.position, kind: o.kind };
+    });
+  });
+  if (!best || best.dist > OPENING_HIT_TOLERANCE) return null;
+  return best;
 }
 
 // بيرجع نقطتين لرسم علامة فتحة على جدار (بمساحة المخطط 2D بالمتر)
@@ -710,9 +726,19 @@ export default function ArchitectStudio({ session }) {
   const [autoRotate, setAutoRotate] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
   const [placeMode, setPlaceMode] = useState(null); // null | 'door' | 'window'
+  const [selectedOpening, setSelectedOpening] = useState(null); // {id, roomId, wall, position, kind} | null
+  const [movingOpeningId, setMovingOpeningId] = useState(null);
   const [currentFloor, setCurrentFloor] = useState(0);
   const [printData, setPrintData] = useState(null);
   const [confirmDeleteFloor, setConfirmDeleteFloor] = useState(false);
+
+  useEffect(() => {
+    setSelectedOpening(null);
+  }, [currentFloor]);
+
+  useEffect(() => {
+    if (!placeMode) setMovingOpeningId(null);
+  }, [placeMode]);
 
   const sharedBoundaries = useMemo(() => computeSharedBoundaries(rooms), [rooms]);
   const sharedRanges = useMemo(() => sharedWallRanges(sharedBoundaries), [sharedBoundaries]);
@@ -813,7 +839,7 @@ export default function ArchitectStudio({ session }) {
     canvas.width = gridW * PPM;
     canvas.height = gridH * PPM;
     drawPlan();
-  }, [drawPlan, gridW, gridH]);
+  }, [drawPlan, gridW, gridH, view]);
 
   function getMeterCoords(e) {
     const canvas = canvasRef.current;
@@ -836,10 +862,18 @@ export default function ArchitectStudio({ session }) {
     if (placeMode) {
       const { x, y } = getMeterCoordsRaw(e);
       const width = placeMode === "door" ? DOOR_W : WIN_W;
-      const hit = hitTestWalls(rooms.filter((r) => (r.floor ?? 0) === currentFloor), x, y, width, placeMode, sharedRanges);
+      const hit = hitTestWalls(rooms.filter((r) => (r.floor ?? 0) === currentFloor), x, y, width, placeMode, sharedRanges, movingOpeningId);
       if (hit) placeOpening(hit.roomId, hit.wall, placeMode, hit.position);
       return;
     }
+    const raw = getMeterCoordsRaw(e);
+    const openingHit = hitTestOpenings(rooms.filter((r) => (r.floor ?? 0) === currentFloor), raw.x, raw.y);
+    if (openingHit) {
+      setSelectedOpening(openingHit);
+      setSelectedId(null);
+      return;
+    }
+    setSelectedOpening(null);
     const { x, y } = getMeterCoords(e);
     draggingRef.current = true;
     draftRef.current = { sx: x, sy: y, ex: x, ey: y };
@@ -849,7 +883,7 @@ export default function ArchitectStudio({ session }) {
     if (placeMode) {
       const { x, y } = getMeterCoordsRaw(e);
       const width = placeMode === "door" ? DOOR_W : WIN_W;
-      hoverRef.current = hitTestWalls(rooms.filter((r) => (r.floor ?? 0) === currentFloor), x, y, width, placeMode, sharedRanges);
+      hoverRef.current = hitTestWalls(rooms.filter((r) => (r.floor ?? 0) === currentFloor), x, y, width, placeMode, sharedRanges, movingOpeningId);
       drawPlan();
       return;
     }
@@ -885,6 +919,26 @@ export default function ArchitectStudio({ session }) {
   }
 
   async function placeOpening(roomId, wall, kind, position) {
+    if (movingOpeningId) {
+      const openingId = movingOpeningId;
+      const { data, error } = await supabase
+        .from("openings")
+        .update({ room_id: roomId, wall, position })
+        .eq("id", openingId)
+        .select()
+        .single();
+      if (error) { console.error("move opening failed", error); return; }
+      setRooms((prev) => prev.map((r) => {
+        const withoutOld = (r.openings || []).filter((o) => o.id !== openingId);
+        return { ...r, openings: r.id === roomId ? [...withoutOld, data] : withoutOld };
+      }));
+      setMovingOpeningId(null);
+      setPlaceMode(null);
+      hoverRef.current = null;
+      drawPlan();
+      return;
+    }
+
     const { data, error } = await supabase
       .from("openings")
       .insert({ room_id: roomId, wall, kind, position })
@@ -895,6 +949,19 @@ export default function ArchitectStudio({ session }) {
     setPlaceMode(null);
     hoverRef.current = null;
     drawPlan();
+  }
+
+  async function deleteOpening(opening) {
+    setRooms((prev) => prev.map((r) => (r.id === opening.roomId ? { ...r, openings: (r.openings || []).filter((o) => o.id !== opening.id) } : r)));
+    setSelectedOpening(null);
+    const { error } = await supabase.from("openings").delete().eq("id", opening.id);
+    if (error) console.error("delete opening failed", error);
+  }
+
+  function startMoveOpening(opening) {
+    setSelectedOpening(null);
+    setMovingOpeningId(opening.id);
+    setPlaceMode(opening.kind);
   }
 
   async function renameRoom(id, name) {
@@ -1313,14 +1380,14 @@ export default function ArchitectStudio({ session }) {
                 <div className="flex gap-2">
                   <button
                     disabled={floorRooms.length === 0}
-                    onClick={() => setPlaceMode((m) => (m === "window" ? null : "window"))}
+                    onClick={() => { setSelectedOpening(null); setMovingOpeningId(null); setPlaceMode((m) => (m === "window" ? null : "window")); }}
                     className={`flex-1 flex items-center justify-center gap-1.5 text-xs font-semibold rounded-md py-2 border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${placeMode === "window" ? "bg-cyan-500 text-slate-950 border-cyan-500" : "bg-slate-800 hover:bg-slate-700 border-slate-700"}`}
                   >
                     <AppWindow size={13}/> نافذة+
                   </button>
                   <button
                     disabled={floorRooms.length === 0}
-                    onClick={() => setPlaceMode((m) => (m === "door" ? null : "door"))}
+                    onClick={() => { setSelectedOpening(null); setMovingOpeningId(null); setPlaceMode((m) => (m === "door" ? null : "door")); }}
                     className={`flex-1 flex items-center justify-center gap-1.5 text-xs font-semibold rounded-md py-2 border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${placeMode === "door" ? "bg-cyan-500 text-slate-950 border-cyan-500" : "bg-slate-800 hover:bg-slate-700 border-slate-700"}`}
                   >
                     <DoorOpen size={13}/> باب+
@@ -1328,7 +1395,14 @@ export default function ArchitectStudio({ session }) {
                 </div>
                 {placeMode && (
                   <p className="text-[11px] text-cyan-300 mt-2 leading-relaxed">
-                    دوس على أي جدار بالمخطط لتحديد مكان {placeMode === "door" ? "الباب" : "النافذة"}.
+                    {movingOpeningId
+                      ? `دوس على جدار جديد لنقل ${placeMode === "door" ? "الباب" : "النافذة"}.`
+                      : `دوس على أي جدار بالمخطط لتحديد مكان ${placeMode === "door" ? "الباب" : "النافذة"}.`}
+                  </p>
+                )}
+                {selectedOpening && (
+                  <p className="text-[11px] text-slate-400 mt-2 leading-relaxed">
+                    محدد: {selectedOpening.kind === "door" ? "باب" : "نافذة"} — دوس "نقل" أو "حذف" بالمخطط.
                   </p>
                 )}
               </div>
@@ -1424,6 +1498,27 @@ export default function ArchitectStudio({ session }) {
                       </p>
                     </div>
                   )}
+                  {selectedOpening && !placeMode && (() => {
+                    const room = floorRooms.find((r) => r.id === selectedOpening.roomId);
+                    if (!room) return null;
+                    const width = selectedOpening.kind === "door" ? DOOR_W : WIN_W;
+                    const m = openingMarkPoints(room, selectedOpening.wall, selectedOpening.position, width);
+                    const leftPct = clamp(((m.x1 + m.x2) / 2 / gridW) * 100, 2, 98);
+                    const topPct = clamp(((m.y1 + m.y2) / 2 / gridH) * 100, 2, 98);
+                    return (
+                      <div
+                        className="absolute flex items-center gap-1 bg-slate-900 border border-cyan-500 rounded-md shadow-xl p-1 -translate-x-1/2 -translate-y-full z-10"
+                        style={{ left: `${leftPct}%`, top: `${topPct}%`, marginTop: -10 }}
+                      >
+                        <button onClick={() => startMoveOpening(selectedOpening)} title="نقل" className="p-1.5 rounded hover:bg-slate-800 text-slate-300">
+                          <Move size={14} />
+                        </button>
+                        <button onClick={() => deleteOpening(selectedOpening)} title="حذف" className="p-1.5 rounded hover:bg-red-950 text-red-400">
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             ) : (
