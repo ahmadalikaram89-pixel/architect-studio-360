@@ -63,6 +63,8 @@ create table if not exists rooms (
   color text not null default '#C7714E',
   floor integer not null default 0,   -- 0 = الطابق الأرضي، 1 = الأول...
   has_roof boolean not null default true,   -- بلا سطح = شرفة/تراس مكشوف؛ true بس تحافظ على شكل الغرف القديمة، الغرف الجديدة تنضاف بـ false (يدوي)
+  wall_height numeric,   -- NULL = ورّث ارتفاع المشروع (projects.wall_height) — تخصيص لكل طابق
+  wall_color text,       -- NULL = ورّث لون المشروع (projects.wall_color) — تخصيص لكل طابق
   created_at timestamptz not null default now()
 );
 

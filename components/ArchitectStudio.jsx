@@ -413,7 +413,8 @@ function Viewport3D({ rooms, wallHeight, wallColor, autoRotate }) {
       cam.top = radius;
       cam.bottom = -radius;
       cam.near = 1;
-      cam.far = radius * 3 + wallHeight * 2;
+      const maxWallHeight = Math.max(wallHeight, ...rooms.map((r) => r.wall_height ?? wallHeight));
+      cam.far = radius * 3 + maxWallHeight * 2;
       cam.updateProjectionMatrix();
     }
   }, [rooms, wallHeight, wallColor]);
@@ -1020,9 +1021,14 @@ export default function ArchitectStudio({ session }) {
     const gx = Math.min(d.sx, d.ex), gy = Math.min(d.sy, d.ey);
     const gw = Math.abs(d.ex - d.sx), gh = Math.abs(d.ey - d.sy);
     if (gw >= 1 && gh >= 1) {
+      const floorRoomsNow = rooms.filter((r) => (r.floor ?? 0) === currentFloor);
       const { data, error } = await supabase
         .from("rooms")
-        .insert({ project_id: project.id, name: ROOM_TYPES[0], gx, gy, gw, gh, color: roomColor, floor: currentFloor, has_roof: false })
+        .insert({
+          project_id: project.id, name: ROOM_TYPES[0], gx, gy, gw, gh, color: roomColor, floor: currentFloor, has_roof: false,
+          wall_height: floorRoomsNow[0]?.wall_height ?? null,
+          wall_color: floorRoomsNow[0]?.wall_color ?? null,
+        })
         .select("*, openings(*), furniture(*)")
         .single();
       if (error) { console.error("insert room failed", error); drawPlan(); return; }
@@ -1201,11 +1207,14 @@ export default function ArchitectStudio({ session }) {
 
   async function loadSample() {
     if (!project) return;
+    const floorRoomsNow = rooms.filter((r) => (r.floor ?? 0) === currentFloor);
+    const inheritedHeight = floorRoomsNow[0]?.wall_height ?? null;
+    const inheritedColor = floorRoomsNow[0]?.wall_color ?? null;
     const sample = [
-      { project_id: project.id, name: "صالة", gx: 1, gy: 1, gw: 6, gh: 5, color: ROOM_COLORS[0].hex, floor: currentFloor, has_roof: false },
-      { project_id: project.id, name: "مطبخ", gx: 7.5, gy: 1, gw: 4, gh: 5, color: ROOM_COLORS[1].hex, floor: currentFloor, has_roof: false },
-      { project_id: project.id, name: "غرفة نوم", gx: 1, gy: 6.5, gw: 5, gh: 4, color: ROOM_COLORS[2].hex, floor: currentFloor, has_roof: false },
-      { project_id: project.id, name: "حمام", gx: 6.5, gy: 6.5, gw: 3, gh: 4, color: ROOM_COLORS[3].hex, floor: currentFloor, has_roof: false },
+      { project_id: project.id, name: "صالة", gx: 1, gy: 1, gw: 6, gh: 5, color: ROOM_COLORS[0].hex, floor: currentFloor, has_roof: false, wall_height: inheritedHeight, wall_color: inheritedColor },
+      { project_id: project.id, name: "مطبخ", gx: 7.5, gy: 1, gw: 4, gh: 5, color: ROOM_COLORS[1].hex, floor: currentFloor, has_roof: false, wall_height: inheritedHeight, wall_color: inheritedColor },
+      { project_id: project.id, name: "غرفة نوم", gx: 1, gy: 6.5, gw: 5, gh: 4, color: ROOM_COLORS[2].hex, floor: currentFloor, has_roof: false, wall_height: inheritedHeight, wall_color: inheritedColor },
+      { project_id: project.id, name: "حمام", gx: 6.5, gy: 6.5, gw: 3, gh: 4, color: ROOM_COLORS[3].hex, floor: currentFloor, has_roof: false, wall_height: inheritedHeight, wall_color: inheritedColor },
     ];
     await supabase.from("rooms").delete().eq("project_id", project.id).eq("floor", currentFloor);
     const { data, error } = await supabase.from("rooms").insert(sample).select("*, openings(*), furniture(*)");
@@ -1349,19 +1358,31 @@ export default function ArchitectStudio({ session }) {
     setInitializing(false);
   }
 
-  async function persistWallSettings(fields) {
-    if (!project) return;
-    const { error } = await supabase.from("projects").update(fields).eq("id", project.id);
-    if (error) console.error("wall settings update failed", error);
+  function currentFloorWallHeight() {
+    const room = rooms.find((r) => (r.floor ?? 0) === currentFloor);
+    return room?.wall_height ?? wallHeight;
+  }
+  function currentFloorWallColor() {
+    const room = rooms.find((r) => (r.floor ?? 0) === currentFloor);
+    return room?.wall_color ?? wallColor;
   }
 
-  function commitWallHeight(value) {
-    setWallHeight(value);
-    persistWallSettings({ wall_height: value });
+  // معاينة حية أثناء سحب شريط الارتفاع — تحديث محلي بس، بلا كتابة لقاعدة البيانات
+  function previewFloorWallHeight(value) {
+    setRooms((prev) => prev.map((r) => ((r.floor ?? 0) === currentFloor ? { ...r, wall_height: value } : r)));
   }
-  function commitWallColor(hex) {
-    setWallColor(hex);
-    persistWallSettings({ wall_color: hex });
+
+  async function commitFloorWallHeight(value) {
+    if (!project || floorRooms.length === 0) return;
+    const { error } = await supabase.from("rooms").update({ wall_height: value }).eq("project_id", project.id).eq("floor", currentFloor);
+    if (error) console.error("update floor wall height failed", error);
+  }
+
+  async function setFloorWallColor(hex) {
+    if (!project || floorRooms.length === 0) return;
+    setRooms((prev) => prev.map((r) => ((r.floor ?? 0) === currentFloor ? { ...r, wall_color: hex } : r)));
+    const { error } = await supabase.from("rooms").update({ wall_color: hex }).eq("project_id", project.id).eq("floor", currentFloor);
+    if (error) console.error("update floor wall color failed", error);
   }
 
   function startOver() {
@@ -1623,21 +1644,33 @@ export default function ArchitectStudio({ session }) {
               </div>
             </div>
 
-            <div>
-              <p className="text-xs font-semibold text-slate-400 mb-2">لون الجدران</p>
-              <div className="flex gap-2">
-                {WALL_COLORS.map((c) => (
-                  <button key={c.hex} title={c.name} onClick={() => commitWallColor(c.hex)} style={{ backgroundColor: c.hex }}
-                    className={`w-7 h-7 rounded-full border-2 transition-transform ${wallColor === c.hex ? "border-cyan-500 scale-110" : "border-slate-700"}`} />
-                ))}
+            {view === "plan" && (
+              <div>
+                <p className="text-xs font-semibold text-slate-400 mb-2">لون جدران {floorLabel(currentFloor)}</p>
+                <div className="flex gap-2">
+                  {WALL_COLORS.map((c) => (
+                    <button key={c.hex} title={c.name} disabled={floorRooms.length === 0} onClick={() => setFloorWallColor(c.hex)} style={{ backgroundColor: c.hex }}
+                      className={`w-7 h-7 rounded-full border-2 transition-transform disabled:opacity-40 disabled:cursor-not-allowed ${currentFloorWallColor() === c.hex ? "border-cyan-500 scale-110" : "border-slate-700"}`} />
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
 
-            <div>
-              <p className="text-xs font-semibold text-slate-400 mb-2 flex items-center gap-1.5"><Ruler size={13}/> ارتفاع الجدار</p>
-              <input type="range" min="2" max="4.5" step="0.1" value={wallHeight} onChange={(e) => setWallHeight(parseFloat(e.target.value))} onMouseUp={(e) => persistWallSettings({ wall_height: parseFloat(e.target.value) })} onTouchEnd={(e) => persistWallSettings({ wall_height: parseFloat(e.target.value) })} className="w-full" />
-              <p className="text-[11px] font-mono text-slate-400 mt-1">{wallHeight.toFixed(1)} م</p>
-            </div>
+            {view === "plan" && (
+              <div>
+                <p className="text-xs font-semibold text-slate-400 mb-2 flex items-center gap-1.5"><Ruler size={13}/> ارتفاع جدران {floorLabel(currentFloor)}</p>
+                <input
+                  type="range" min="2" max="4.5" step="0.1"
+                  value={currentFloorWallHeight()}
+                  disabled={floorRooms.length === 0}
+                  onChange={(e) => previewFloorWallHeight(parseFloat(e.target.value))}
+                  onMouseUp={(e) => commitFloorWallHeight(parseFloat(e.target.value))}
+                  onTouchEnd={(e) => commitFloorWallHeight(parseFloat(e.target.value))}
+                  className="w-full disabled:opacity-40"
+                />
+                <p className="text-[11px] font-mono text-slate-400 mt-1">{currentFloorWallHeight().toFixed(1)} م</p>
+              </div>
+            )}
 
             {view === "3d" && (
               <div>
