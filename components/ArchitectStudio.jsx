@@ -6,7 +6,7 @@ import {
   Box, Layers, Trash2, RotateCcw, PlayCircle, PauseCircle, Ruler, Sparkles, X,
   MapPin, PencilRuler, Building2, FileCheck2, HardHat, ClipboardCheck, KeyRound,
   CheckCircle2, Circle, Clock3, ChevronLeft, FolderPlus, ChevronDown, Plus, CalendarDays, UserRound,
-  Loader2, AlertTriangle, LogOut, AppWindow, DoorOpen,
+  Loader2, AlertTriangle, LogOut, AppWindow, DoorOpen, Printer,
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 import { computeCenter, rebuildGroup, DOOR_W, WIN_W } from "../lib/build3d";
@@ -93,6 +93,61 @@ function openingMarkPoints(room, wall, position, width) {
   }
   const x = wall === "left" ? room.gx : room.gx + room.gw;
   return { x1: x, y1: room.gy + position - half, x2: x, y2: room.gy + position + half };
+}
+
+// نسخة فاتحة (أبيض/رمادي) من رسم المخطط، مناسبة للطباعة/PDF بدل الثيم الغامق للتطبيق
+function drawFloorPlanImage(floorRoomsList, gridW, gridH) {
+  const canvas = document.createElement("canvas");
+  canvas.width = gridW * PPM;
+  canvas.height = gridH * PPM;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#FFFFFF";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  for (let x = 0; x <= gridW; x++) {
+    ctx.strokeStyle = x % 5 === 0 ? "#CBD5E1" : "#EEF2F7";
+    ctx.lineWidth = x % 5 === 0 ? 1.2 : 1;
+    ctx.beginPath();
+    ctx.moveTo(x * PPM + 0.5, 0);
+    ctx.lineTo(x * PPM + 0.5, gridH * PPM);
+    ctx.stroke();
+  }
+  for (let y = 0; y <= gridH; y++) {
+    ctx.strokeStyle = y % 5 === 0 ? "#CBD5E1" : "#EEF2F7";
+    ctx.lineWidth = y % 5 === 0 ? 1.2 : 1;
+    ctx.beginPath();
+    ctx.moveTo(0, y * PPM + 0.5);
+    ctx.lineTo(gridW * PPM, y * PPM + 0.5);
+    ctx.stroke();
+  }
+
+  floorRoomsList.forEach((r) => {
+    const x = r.gx * PPM, y = r.gy * PPM, rw = r.gw * PPM, rh = r.gh * PPM;
+    ctx.fillStyle = r.color + "25";
+    ctx.fillRect(x, y, rw, rh);
+    ctx.strokeStyle = r.color;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x, y, rw, rh);
+    ctx.fillStyle = "#1E293B";
+    ctx.font = "700 13px Tajawal, sans-serif";
+    ctx.fillText(r.name, x + 8, y + 20);
+    ctx.fillStyle = "#64748B";
+    ctx.font = "11px 'IBM Plex Mono', monospace";
+    ctx.fillText(`${r.gw.toFixed(1)} × ${r.gh.toFixed(1)} m`, x + 8, y + 36);
+
+    (r.openings || []).forEach((o) => {
+      const width = o.kind === "door" ? DOOR_W : WIN_W;
+      const m = openingMarkPoints(r, o.wall, o.position, width);
+      ctx.strokeStyle = o.kind === "door" ? "#8B5A2B" : "#0EA5E9";
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.moveTo(m.x1 * PPM, m.y1 * PPM);
+      ctx.lineTo(m.x2 * PPM, m.y2 * PPM);
+      ctx.stroke();
+    });
+  });
+
+  return canvas.toDataURL("image/png");
 }
 
 // أيقونة كل مرحلة حسب رقمها الثابت (المحتوى نفسه بينشئه Trigger داخل قاعدة البيانات)
@@ -634,6 +689,7 @@ export default function ArchitectStudio({ session }) {
   const [selectedId, setSelectedId] = useState(null);
   const [placeMode, setPlaceMode] = useState(null); // null | 'door' | 'window'
   const [currentFloor, setCurrentFloor] = useState(0);
+  const [printData, setPrintData] = useState(null);
 
   const canvasRef = useRef(null);
   const draftRef = useRef(null);
@@ -911,6 +967,25 @@ export default function ArchitectStudio({ session }) {
     setSelectedId(null);
   }, [currentFloor]);
 
+  useEffect(() => {
+    if (printData) window.print();
+  }, [printData]);
+
+  function handlePrint() {
+    if (!project) return;
+    const floorNums = [...new Set(rooms.map((r) => r.floor ?? 0))].sort((a, b) => a - b);
+    const floors = (floorNums.length ? floorNums : [0]).map((f) => {
+      const floorRoomsList = rooms.filter((r) => (r.floor ?? 0) === f);
+      return {
+        floorNum: f,
+        label: floorLabel(f),
+        imageDataUrl: drawFloorPlanImage(floorRoomsList, gridW, gridH),
+        rooms: floorRoomsList,
+      };
+    });
+    setPrintData({ floors });
+  }
+
   async function signOut() {
     await supabase.auth.signOut();
   }
@@ -997,7 +1072,8 @@ export default function ArchitectStudio({ session }) {
   const totalArea = floorRooms.reduce((s, r) => s + r.gw * r.gh, 0);
 
   return (
-    <div dir="rtl" className="w-full h-screen flex flex-col bg-slate-950 text-slate-100" style={{ fontFamily: "'Tajawal', sans-serif" }}>
+    <>
+    <div id="app-shell" dir="rtl" className="w-full h-screen flex flex-col bg-slate-950 text-slate-100" style={{ fontFamily: "'Tajawal', sans-serif" }}>
       <style>{`input[type="range"] { accent-color: #22D3EE; }`}</style>
 
       <header className="flex items-center justify-between border-b border-slate-800 bg-slate-900/60 px-5 py-3 shrink-0 flex-wrap gap-2">
@@ -1042,6 +1118,9 @@ export default function ArchitectStudio({ session }) {
               <FolderPlus size={13} /> مشروع جديد
             </button>
           )}
+          <button onClick={handlePrint} title="طباعة المخطط / حفظ PDF" className="flex items-center gap-1.5 text-xs font-semibold text-slate-400 hover:text-slate-200 px-2 py-1.5">
+            <Printer size={13} /> طباعة / PDF
+          </button>
           <button onClick={signOut} title="تسجيل الخروج" className="flex items-center gap-1.5 text-xs font-semibold text-slate-400 hover:text-slate-200 px-2 py-1.5">
             <LogOut size={13} /> خروج
           </button>
@@ -1219,5 +1298,46 @@ export default function ArchitectStudio({ session }) {
         </div>
       )}
     </div>
+
+    <div id="print-sheet">
+      {printData && (
+        <div dir="rtl" style={{ fontFamily: "'Tajawal', sans-serif", color: "#0f172a" }}>
+          <div style={{ marginBottom: 16 }}>
+            <h1 style={{ fontSize: 20, fontWeight: 800, margin: 0 }}>{project.name}</h1>
+            <p style={{ fontSize: 12, color: "#475569", margin: "4px 0 0" }}>
+              {project.client && `العميل: ${project.client} · `}{project.land_type} · {project.city || "—"} · {project.width}×{project.depth} م
+            </p>
+          </div>
+          {printData.floors.map((f) => (
+            <div key={f.floorNum} className="print-floor-page" style={{ marginBottom: 24 }}>
+              <h2 style={{ fontSize: 15, fontWeight: 700, marginBottom: 8 }}>{f.label}</h2>
+              <img src={f.imageDataUrl} alt={f.label} style={{ maxWidth: "100%", border: "1px solid #E2E8F0" }} />
+              <table style={{ width: "100%", marginTop: 10, borderCollapse: "collapse", fontSize: 12 }}>
+                <thead>
+                  <tr style={{ borderBottom: "1px solid #CBD5E1", textAlign: "right" }}>
+                    <th style={{ padding: "4px 6px" }}>الغرفة</th>
+                    <th style={{ padding: "4px 6px" }}>الأبعاد</th>
+                    <th style={{ padding: "4px 6px" }}>المساحة</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {f.rooms.map((r) => (
+                    <tr key={r.id} style={{ borderBottom: "1px solid #F1F5F9" }}>
+                      <td style={{ padding: "4px 6px" }}>{r.name}</td>
+                      <td style={{ padding: "4px 6px" }}>{r.gw.toFixed(1)} × {r.gh.toFixed(1)} م</td>
+                      <td style={{ padding: "4px 6px" }}>{(r.gw * r.gh).toFixed(1)} م²</td>
+                    </tr>
+                  ))}
+                  {f.rooms.length === 0 && (
+                    <tr><td colSpan={3} style={{ padding: "4px 6px", color: "#94A3B8" }}>لا توجد غرف بهاد الطابق.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+    </>
   );
 }
