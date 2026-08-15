@@ -62,6 +62,7 @@ create table if not exists rooms (
   gh numeric not null,   -- العمق بالمتر
   color text not null default '#C7714E',
   floor integer not null default 0,   -- 0 = الطابق الأرضي، 1 = الأول...
+  has_roof boolean not null default true,   -- بلا سطح = شرفة/تراس مكشوف؛ true بس تحافظ على شكل الغرف القديمة، الغرف الجديدة تنضاف بـ false (يدوي)
   created_at timestamptz not null default now()
 );
 
