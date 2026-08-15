@@ -89,12 +89,26 @@ create table if not exists furniture (
   created_at timestamptz not null default now()
 );
 
+-- جدول السلالم (على مستوى المشروع مش الغرفة — سلالم كتير بتكون خارجية أو ما إلها غرفة محدّدة).
+-- x/y = مركز مساحة السلم بالمتر (نفس نظام إحداثيات rooms.gx/gy)، floor = الطابق السفلي
+-- (السلم بيربطه مع floor+1)
+create table if not exists stairs (
+  id uuid primary key default gen_random_uuid(),
+  project_id uuid not null references projects(id) on delete cascade,
+  floor integer not null default 0,
+  x numeric not null,
+  y numeric not null,
+  rotation integer not null default 0 check (rotation in (0, 90, 180, 270)),
+  created_at timestamptz not null default now()
+);
+
 -- فهارس لتسريع الاستعلامات الشائعة
 create index if not exists idx_phases_project on phases(project_id);
 create index if not exists idx_subtasks_phase on subtasks(phase_id);
 create index if not exists idx_rooms_project on rooms(project_id);
 create index if not exists idx_openings_room on openings(room_id);
 create index if not exists idx_furniture_room on furniture(room_id);
+create index if not exists idx_stairs_project on stairs(project_id);
 
 -- ============================================================
 -- دالة تنشئ تلقائياً المراحل السبعة الافتراضية عند إنشاء مشروع جديد
@@ -240,6 +254,7 @@ alter table subtasks enable row level security;
 alter table rooms enable row level security;
 alter table openings enable row level security;
 alter table furniture enable row level security;
+alter table stairs enable row level security;
 
 create policy "own projects" on projects
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
@@ -295,4 +310,11 @@ create policy "own furniture" on furniture
       select 1 from rooms r join projects p on p.id = r.project_id
       where r.id = furniture.room_id and p.user_id = auth.uid()
     )
+  );
+
+create policy "own stairs" on stairs
+  for all using (
+    exists (select 1 from projects p where p.id = stairs.project_id and p.user_id = auth.uid())
+  ) with check (
+    exists (select 1 from projects p where p.id = stairs.project_id and p.user_id = auth.uid())
   );

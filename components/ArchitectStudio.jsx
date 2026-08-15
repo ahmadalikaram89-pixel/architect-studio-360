@@ -9,7 +9,7 @@ import {
   Loader2, AlertTriangle, LogOut, AppWindow, DoorOpen, Printer, Folders, Move, Armchair,
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
-import { computeCenter, rebuildGroup, DOOR_W, WIN_W, computeSharedBoundaries, sharedWallRanges, FURNITURE_KINDS } from "../lib/build3d";
+import { computeCenter, rebuildGroup, DOOR_W, WIN_W, computeSharedBoundaries, sharedWallRanges, FURNITURE_KINDS, computeFloorBaseYMap, stairFootprint } from "../lib/build3d";
 
 const ROOM_COLORS = [
   { name: "طوبي", hex: "#C7714E" },
@@ -169,6 +169,49 @@ function hitTestRoomForFurniture(rooms, cx, cy, kind, excludeId) {
   return { roomId: room.id, x, y };
 }
 
+const STAIR_HIT_TOLERANCE = 0.15; // بالمتر — تسامح النقر على علامة سلم موجودة
+
+// فرق ارتفاع القاعدة (Y) بين طابق وياللي فوقه مباشرة — نفس منطق computeFloorBaseYMap
+// المستخدم بالبناء ثلاثي الأبعاد، مطلوب هون لحساب طول مسار السلم بالمخطط 2D
+function floorToFloorHeight(rooms, floor, projectWallHeight) {
+  const map = computeFloorBaseYMap(rooms, projectWallHeight, floor + 1);
+  return map.get(floor + 1) - map.get(floor);
+}
+
+// بعد فعّال (عرض/طول) لمساحة سلم حسب دورانه — نفس منطق furnitureFootprint بالضبط
+function stairEffectiveFootprint(floorToFloorH, rotation) {
+  const { w, d } = stairFootprint(floorToFloorH);
+  const swapped = rotation === 90 || rotation === 270;
+  return { w: swapped ? d : w, d: swapped ? w : d };
+}
+
+// بيلاقي أقرب سلم موجود (بنفس الطابق) لنقطة نقر معيّنة، لتحديده (نقل/تدوير/حذف)
+function hitTestStairs(stairsForFloor, rooms, projectWallHeight, cx, cy) {
+  let best = null;
+  stairsForFloor.forEach((s) => {
+    const h = floorToFloorHeight(rooms, s.floor ?? 0, projectWallHeight);
+    const rotation = s.rotation || 0;
+    const { w, d } = stairEffectiveFootprint(h, rotation);
+    const ax0 = s.x - w / 2, ax1 = s.x + w / 2, ay0 = s.y - d / 2, ay1 = s.y + d / 2;
+    const dx = Math.max(ax0 - cx, 0, cx - ax1);
+    const dz = Math.max(ay0 - cy, 0, cy - ay1);
+    const dist = Math.hypot(dx, dz);
+    if (!best || dist < best.dist) best = { dist, id: s.id, floor: s.floor ?? 0, x: s.x, y: s.y, rotation };
+  });
+  if (!best || best.dist > STAIR_HIT_TOLERANCE) return null;
+  return best;
+}
+
+// بيحصر موضع سلم جوّا حدود الشبكة كاملة (بعكس الأثاث، بلا حصر بغرفة — سلالم كتير خارجية)
+function hitTestGridForStair(gridW, gridH, cx, cy, floorToFloorH, rotation) {
+  const { w, d } = stairEffectiveFootprint(floorToFloorH, rotation);
+  if (gridW < w || gridH < d) return null;
+  const half_w = w / 2, half_d = d / 2;
+  const x = clamp(cx, half_w, gridW - half_w);
+  const y = clamp(cy, half_d, gridH - half_d);
+  return { x, y };
+}
+
 // نسخة فاتحة (أبيض/رمادي) من رسم المخطط، مناسبة للطباعة/PDF بدل الثيم الغامق للتطبيق
 function drawFloorPlanImage(floorRoomsList, gridW, gridH) {
   const canvas = document.createElement("canvas");
@@ -259,7 +302,7 @@ function clamp(v, a, b) {
   return Math.min(b, Math.max(a, v));
 }
 
-function Viewport3D({ rooms, wallHeight, wallColor, autoRotate }) {
+function Viewport3D({ rooms, stairs, wallHeight, wallColor, autoRotate }) {
   const mountRef = useRef(null);
   const stateRef = useRef({});
   const flagsRef = useRef({ autoRotate });
@@ -402,7 +445,7 @@ function Viewport3D({ rooms, wallHeight, wallColor, autoRotate }) {
   useEffect(() => {
     const s = stateRef.current;
     if (!s.group) return;
-    rebuildGroup(s.group, rooms, wallHeight, wallColor, s.center, s.animState, textureCacheRef.current);
+    rebuildGroup(s.group, rooms, stairs, wallHeight, wallColor, s.center, s.animState, textureCacheRef.current);
 
     if (s.dirLight) {
       const radius = s.defaultRadius;
@@ -417,7 +460,7 @@ function Viewport3D({ rooms, wallHeight, wallColor, autoRotate }) {
       cam.far = radius * 3 + maxWallHeight * 2;
       cam.updateProjectionMatrix();
     }
-  }, [rooms, wallHeight, wallColor]);
+  }, [rooms, stairs, wallHeight, wallColor]);
 
   useEffect(() => {
     if (resetKey === 0) return;
@@ -789,6 +832,7 @@ export default function ArchitectStudio({ session }) {
   const [initializing, setInitializing] = useState(true);
 
   const [rooms, setRooms] = useState([]);
+  const [stairsList, setStairsList] = useState([]);
   const [wallHeight, setWallHeight] = useState(2.7);
   const [roomColor, setRoomColor] = useState(ROOM_COLORS[0].hex);
   const [wallColor, setWallColor] = useState(WALL_COLORS[0].hex);
@@ -799,6 +843,8 @@ export default function ArchitectStudio({ session }) {
   const [movingOpeningId, setMovingOpeningId] = useState(null);
   const [selectedFurniture, setSelectedFurniture] = useState(null); // {id, roomId, kind, x, y, rotation} | null
   const [movingFurnitureId, setMovingFurnitureId] = useState(null);
+  const [selectedStair, setSelectedStair] = useState(null); // {id, floor, x, y, rotation} | null
+  const [movingStairId, setMovingStairId] = useState(null);
   const [currentFloor, setCurrentFloor] = useState(0);
   const [printData, setPrintData] = useState(null);
   const [confirmDeleteFloor, setConfirmDeleteFloor] = useState(false);
@@ -806,12 +852,14 @@ export default function ArchitectStudio({ session }) {
   useEffect(() => {
     setSelectedOpening(null);
     setSelectedFurniture(null);
+    setSelectedStair(null);
   }, [currentFloor]);
 
   useEffect(() => {
     if (!placeMode) {
       setMovingOpeningId(null);
       setMovingFurnitureId(null);
+      setMovingStairId(null);
     }
   }, [placeMode]);
 
@@ -896,6 +944,23 @@ export default function ArchitectStudio({ session }) {
       });
     });
 
+    stairsList.filter((s) => (s.floor ?? 0) === currentFloor).forEach((s) => {
+      const h = floorToFloorHeight(rooms, currentFloor, wallHeight);
+      const { w, d: sd } = stairEffectiveFootprint(h, s.rotation || 0);
+      const sx = (s.x - w / 2) * PPM, sy = (s.y - sd / 2) * PPM;
+      const isSel = selectedStair?.id === s.id;
+      ctx.fillStyle = isSel ? "#22D3EE55" : "#8DA0BC44";
+      ctx.fillRect(sx, sy, w * PPM, sd * PPM);
+      ctx.strokeStyle = isSel ? "#22D3EE" : "#8DA0BC";
+      ctx.lineWidth = isSel ? 2 : 1.5;
+      ctx.strokeRect(sx, sy, w * PPM, sd * PPM);
+      ctx.fillStyle = "#EAF0F8";
+      ctx.font = "10px Tajawal, sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("سلم", sx + (w * PPM) / 2, sy + (sd * PPM) / 2 + 3);
+      ctx.textAlign = "start";
+    });
+
     const d = draftRef.current;
     if (d) {
       const gx = Math.min(d.sx, d.ex), gy = Math.min(d.sy, d.ey);
@@ -922,7 +987,7 @@ export default function ArchitectStudio({ session }) {
         ctx.globalAlpha = 1;
       }
     }
-  }, [rooms, selectedId, selectedFurniture, gridW, gridH, placeMode, currentFloor]);
+  }, [rooms, selectedId, selectedFurniture, stairsList, selectedStair, wallHeight, gridW, gridH, placeMode, currentFloor]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -957,6 +1022,14 @@ export default function ArchitectStudio({ session }) {
       if (hit) placeFurniture(hit.roomId, kind, hit.x, hit.y);
       return;
     }
+    if (placeMode === "stairs") {
+      const { x, y } = getMeterCoordsRaw(e);
+      const h = floorToFloorHeight(rooms, currentFloor, wallHeight);
+      const movingStair = movingStairId ? stairsList.find((s) => s.id === movingStairId) : null;
+      const hit = hitTestGridForStair(gridW, gridH, x, y, h, movingStair?.rotation || 0);
+      if (hit) placeStair(currentFloor, hit.x, hit.y);
+      return;
+    }
     if (placeMode) {
       const { x, y } = getMeterCoordsRaw(e);
       const width = placeMode === "door" ? DOOR_W : WIN_W;
@@ -970,6 +1043,7 @@ export default function ArchitectStudio({ session }) {
     if (openingHit) {
       setSelectedOpening(openingHit);
       setSelectedFurniture(null);
+      setSelectedStair(null);
       setSelectedId(null);
       return;
     }
@@ -977,11 +1051,22 @@ export default function ArchitectStudio({ session }) {
     if (furnitureHit) {
       setSelectedFurniture(furnitureHit);
       setSelectedOpening(null);
+      setSelectedStair(null);
+      setSelectedId(null);
+      return;
+    }
+    const stairsForFloor = stairsList.filter((s) => (s.floor ?? 0) === currentFloor);
+    const stairHit = hitTestStairs(stairsForFloor, rooms, wallHeight, raw.x, raw.y);
+    if (stairHit) {
+      setSelectedStair(stairHit);
+      setSelectedOpening(null);
+      setSelectedFurniture(null);
       setSelectedId(null);
       return;
     }
     setSelectedOpening(null);
     setSelectedFurniture(null);
+    setSelectedStair(null);
     const { x, y } = getMeterCoords(e);
     draggingRef.current = true;
     draftRef.current = { sx: x, sy: y, ex: x, ey: y };
@@ -992,6 +1077,14 @@ export default function ArchitectStudio({ session }) {
       const kind = placeMode.slice("furniture:".length);
       const { x, y } = getMeterCoordsRaw(e);
       hoverRef.current = hitTestRoomForFurniture(rooms.filter((r) => (r.floor ?? 0) === currentFloor), x, y, kind, movingFurnitureId);
+      drawPlan();
+      return;
+    }
+    if (placeMode === "stairs") {
+      const { x, y } = getMeterCoordsRaw(e);
+      const h = floorToFloorHeight(rooms, currentFloor, wallHeight);
+      const movingStair = movingStairId ? stairsList.find((s) => s.id === movingStairId) : null;
+      hoverRef.current = hitTestGridForStair(gridW, gridH, x, y, h, movingStair?.rotation || 0);
       drawPlan();
       return;
     }
@@ -1138,6 +1231,57 @@ export default function ArchitectStudio({ session }) {
     if (error) console.error("rotate furniture failed", error);
   }
 
+  async function placeStair(floor, x, y) {
+    if (!project) return;
+    if (movingStairId) {
+      const stairId = movingStairId;
+      const { data, error } = await supabase
+        .from("stairs")
+        .update({ floor, x, y })
+        .eq("id", stairId)
+        .select()
+        .single();
+      if (error) { console.error("move stair failed", error); return; }
+      setStairsList((prev) => prev.map((s) => (s.id === stairId ? data : s)));
+      setMovingStairId(null);
+      setPlaceMode(null);
+      hoverRef.current = null;
+      drawPlan();
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("stairs")
+      .insert({ project_id: project.id, floor, x, y })
+      .select()
+      .single();
+    if (error) { console.error("insert stair failed", error); return; }
+    setStairsList((prev) => [...prev, data]);
+    // نضل بوضع الإضافة (نفس منطق الأبواب/النوافذ/الأثاث)
+    drawPlan();
+  }
+
+  async function deleteStair(stair) {
+    setStairsList((prev) => prev.filter((s) => s.id !== stair.id));
+    setSelectedStair(null);
+    const { error } = await supabase.from("stairs").delete().eq("id", stair.id);
+    if (error) console.error("delete stair failed", error);
+  }
+
+  function startMoveStair(stair) {
+    setSelectedStair(null);
+    setMovingStairId(stair.id);
+    setPlaceMode("stairs");
+  }
+
+  async function rotateStair(stair) {
+    const nextRotation = (stair.rotation + 90) % 360;
+    setStairsList((prev) => prev.map((s) => (s.id === stair.id ? { ...s, rotation: nextRotation } : s)));
+    setSelectedStair((s) => (s && s.id === stair.id ? { ...s, rotation: nextRotation } : s));
+    const { error } = await supabase.from("stairs").update({ rotation: nextRotation }).eq("id", stair.id);
+    if (error) console.error("rotate stair failed", error);
+  }
+
   async function renameRoom(id, name) {
     setRooms((prev) => prev.map((r) => (r.id === id ? { ...r, name } : r)));
     const { error } = await supabase.from("rooms").update({ name }).eq("id", id);
@@ -1252,14 +1396,16 @@ export default function ArchitectStudio({ session }) {
       setProjectsList(projects || []);
       const proj = projects && projects[0];
       if (proj) {
-        const [phasesData, roomsRes] = await Promise.all([
+        const [phasesData, roomsRes, stairsRes] = await Promise.all([
           fetchPhasesForProject(proj.id),
           supabase.from("rooms").select("*, openings(*), furniture(*)").eq("project_id", proj.id),
+          supabase.from("stairs").select("*").eq("project_id", proj.id),
         ]);
         if (cancelled) return;
         setProject(proj);
         setPhases(phasesData);
         setRooms(roomsRes.data || []);
+        setStairsList(stairsRes.data || []);
         setWallHeight(proj.wall_height);
         setWallColor(proj.wall_color);
       }
@@ -1329,6 +1475,7 @@ export default function ArchitectStudio({ session }) {
     setProject(proj);
     setPhases(phasesData);
     setRooms([]);
+    setStairsList([]);
     setWallHeight(proj.wall_height);
     setWallColor(proj.wall_color);
     setSelectedId(null);
@@ -1342,13 +1489,15 @@ export default function ArchitectStudio({ session }) {
     if (!proj || proj.id === project?.id) { setSwitcherOpen(false); return; }
     setInitializing(true);
     setSwitcherOpen(false);
-    const [phasesData, roomsRes] = await Promise.all([
+    const [phasesData, roomsRes, stairsRes] = await Promise.all([
       fetchPhasesForProject(proj.id),
       supabase.from("rooms").select("*, openings(*), furniture(*)").eq("project_id", proj.id),
+      supabase.from("stairs").select("*").eq("project_id", proj.id),
     ]);
     setProject(proj);
     setPhases(phasesData);
     setRooms(roomsRes.data || []);
+    setStairsList(stairsRes.data || []);
     setWallHeight(proj.wall_height);
     setWallColor(proj.wall_color);
     setSelectedId(null);
@@ -1634,6 +1783,28 @@ export default function ArchitectStudio({ session }) {
               </div>
             )}
 
+            {view === "plan" && (
+              <div>
+                <p className="text-xs font-semibold text-slate-400 mb-2 flex items-center gap-1.5"><ChevronUp size={13}/> السلالم</p>
+                <button
+                  onClick={() => { setSelectedOpening(null); setSelectedFurniture(null); setSelectedStair(null); setMovingStairId(null); setPlaceMode((m) => (m === "stairs" ? null : "stairs")); }}
+                  className={`w-full flex items-center justify-center gap-1.5 text-xs font-semibold rounded-md py-2 border transition-colors ${placeMode === "stairs" ? "bg-cyan-500 text-slate-950 border-cyan-500" : "bg-slate-800 hover:bg-slate-700 border-slate-700"}`}
+                >
+                  سلم+ (من {floorLabel(currentFloor)} لـ {floorLabel(currentFloor + 1)})
+                </button>
+                {placeMode === "stairs" && (
+                  <p className="text-[11px] text-cyan-300 mt-2 leading-relaxed">
+                    {movingStairId ? "دوس بأي مكان على الشبكة لنقل السلم." : "دوس بأي مكان على الشبكة لوضع السلم."}
+                  </p>
+                )}
+                {selectedStair && (
+                  <p className="text-[11px] text-slate-400 mt-2 leading-relaxed">
+                    محدد: سلم — دوس "نقل" أو "تدوير" أو "حذف" بالمخطط.
+                  </p>
+                )}
+              </div>
+            )}
+
             <div>
               <p className="text-xs font-semibold text-slate-400 mb-2">لون الأرضية للغرفة القادمة</p>
               <div className="flex flex-wrap gap-2">
@@ -1803,10 +1974,32 @@ export default function ArchitectStudio({ session }) {
                       </div>
                     );
                   })()}
+                  {selectedStair && !placeMode && (() => {
+                    const h = floorToFloorHeight(rooms, selectedStair.floor, wallHeight);
+                    const { d } = stairEffectiveFootprint(h, selectedStair.rotation);
+                    const leftPct = clamp((selectedStair.x / gridW) * 100, 2, 98);
+                    const topPct = clamp(((selectedStair.y - d / 2) / gridH) * 100, 2, 98);
+                    return (
+                      <div
+                        className="absolute flex items-center gap-1 bg-slate-900 border border-cyan-500 rounded-md shadow-xl p-1 -translate-x-1/2 -translate-y-full z-10"
+                        style={{ left: `${leftPct}%`, top: `${topPct}%`, marginTop: -10 }}
+                      >
+                        <button onClick={() => startMoveStair(selectedStair)} title="نقل" className="p-1.5 rounded hover:bg-slate-800 text-slate-300">
+                          <Move size={14} />
+                        </button>
+                        <button onClick={() => rotateStair(selectedStair)} title="تدوير" className="p-1.5 rounded hover:bg-slate-800 text-slate-300">
+                          <RotateCw size={14} />
+                        </button>
+                        <button onClick={() => deleteStair(selectedStair)} title="حذف" className="p-1.5 rounded hover:bg-red-950 text-red-400">
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             ) : (
-              <Viewport3D rooms={rooms} wallHeight={wallHeight} wallColor={wallColor} autoRotate={autoRotate} />
+              <Viewport3D rooms={rooms} stairs={stairsList} wallHeight={wallHeight} wallColor={wallColor} autoRotate={autoRotate} />
             )}
           </main>
         </div>
