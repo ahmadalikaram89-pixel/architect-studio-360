@@ -3,13 +3,13 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import * as THREE from "three";
 import {
-  Box, Layers, Trash2, RotateCcw, PlayCircle, PauseCircle, Ruler, Sparkles, X,
+  Box, Layers, Trash2, RotateCcw, RotateCw, PlayCircle, PauseCircle, Ruler, Sparkles, X,
   MapPin, PencilRuler, Building2, FileCheck2, HardHat, ClipboardCheck, KeyRound,
   CheckCircle2, Circle, Clock3, ChevronLeft, FolderPlus, ChevronDown, ChevronUp, Plus, CalendarDays, UserRound,
-  Loader2, AlertTriangle, LogOut, AppWindow, DoorOpen, Printer, Folders, Move,
+  Loader2, AlertTriangle, LogOut, AppWindow, DoorOpen, Printer, Folders, Move, Armchair,
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
-import { computeCenter, rebuildGroup, DOOR_W, WIN_W, computeSharedBoundaries, sharedWallRanges } from "../lib/build3d";
+import { computeCenter, rebuildGroup, DOOR_W, WIN_W, computeSharedBoundaries, sharedWallRanges, FURNITURE_KINDS } from "../lib/build3d";
 
 const ROOM_COLORS = [
   { name: "طوبي", hex: "#C7714E" },
@@ -116,6 +116,59 @@ function openingMarkPoints(room, wall, position, width) {
   return { x1: x, y1: room.gy + position - half, x2: x, y2: room.gy + position + half };
 }
 
+const FURNITURE_HIT_TOLERANCE = 0.12; // بالمتر — تسامح صغير للنقر قريب من حواف قطعة الأثاث
+
+// بعد فعّال (عرض/عمق) لقطعة أثاث حسب دورانها — 90/270 بتبادل العرض والعمق (بلا حاجة لمثلثات
+// بما إنه الدوران دايماً مضاعف 90°)
+function furnitureFootprint(kind, rotation) {
+  const k = FURNITURE_KINDS[kind];
+  if (!k) return { w: 0.5, d: 0.5 };
+  const swapped = rotation === 90 || rotation === 270;
+  return { w: swapped ? k.d : k.w, d: swapped ? k.w : k.d };
+}
+
+// بيلاقي أقرب قطعة أثاث موجودة لنقطة نقر معيّنة، لتحديدها (نقل/تدوير/حذف)
+function hitTestFurniture(rooms, cx, cy) {
+  let best = null;
+  rooms.forEach((r) => {
+    (r.furniture || []).forEach((f) => {
+      const { w, d } = furnitureFootprint(f.kind, f.rotation || 0);
+      const ax0 = r.gx + f.x - w / 2, ax1 = r.gx + f.x + w / 2;
+      const az0 = r.gy + f.y - d / 2, az1 = r.gy + f.y + d / 2;
+      const dx = Math.max(ax0 - cx, 0, cx - ax1);
+      const dz = Math.max(az0 - cy, 0, cy - az1);
+      const dist = Math.hypot(dx, dz);
+      if (!best || dist < best.dist) best = { dist, roomId: r.id, id: f.id, kind: f.kind, x: f.x, y: f.y, rotation: f.rotation || 0 };
+    });
+  });
+  if (!best || best.dist > FURNITURE_HIT_TOLERANCE) return null;
+  return best;
+}
+
+// بيلاقي الغرفة يلي جوّاها نقطة معيّنة (احتواء صارم، مش أقرب غرفة) لوضع قطعة أثاث فيها،
+// بيحصر موضعها جوّا حدود الغرفة، ويرفض لو بتتراكب مع قطعة موجودة أصلاً (باستثناء excludeId
+// أثناء النقل) أو لو القطعة أكبر من الغرفة
+function hitTestRoomForFurniture(rooms, cx, cy, kind, excludeId) {
+  const room = rooms.find((r) => cx >= r.gx && cx <= r.gx + r.gw && cy >= r.gy && cy <= r.gy + r.gh);
+  if (!room) return null;
+  const { w, d } = furnitureFootprint(kind, 0);
+  if (room.gw < w || room.gh < d) return null;
+  const half_w = w / 2, half_d = d / 2;
+  const x = clamp(cx - room.gx, half_w, room.gw - half_w);
+  const y = clamp(cy - room.gy, half_d, room.gh - half_d);
+
+  const ax0 = x - half_w, ax1 = x + half_w, ay0 = y - half_d, ay1 = y + half_d;
+  const overlaps = (room.furniture || []).some((f) => {
+    if (f.id === excludeId) return false;
+    const fp = furnitureFootprint(f.kind, f.rotation || 0);
+    const fx0 = f.x - fp.w / 2, fx1 = f.x + fp.w / 2, fy0 = f.y - fp.d / 2, fy1 = f.y + fp.d / 2;
+    return ax0 < fx1 && ax1 > fx0 && ay0 < fy1 && ay1 > fy0;
+  });
+  if (overlaps) return null;
+
+  return { roomId: room.id, x, y };
+}
+
 // نسخة فاتحة (أبيض/رمادي) من رسم المخطط، مناسبة للطباعة/PDF بدل الثيم الغامق للتطبيق
 function drawFloorPlanImage(floorRoomsList, gridW, gridH) {
   const canvas = document.createElement("canvas");
@@ -165,6 +218,21 @@ function drawFloorPlanImage(floorRoomsList, gridW, gridH) {
       ctx.moveTo(m.x1 * PPM, m.y1 * PPM);
       ctx.lineTo(m.x2 * PPM, m.y2 * PPM);
       ctx.stroke();
+    });
+
+    (r.furniture || []).forEach((f) => {
+      const { w, d: fd } = furnitureFootprint(f.kind, f.rotation || 0);
+      const fx = (r.gx + f.x - w / 2) * PPM, fy = (r.gy + f.y - fd / 2) * PPM;
+      ctx.fillStyle = "#A9895C25";
+      ctx.fillRect(fx, fy, w * PPM, fd * PPM);
+      ctx.strokeStyle = "#A9895C";
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(fx, fy, w * PPM, fd * PPM);
+      ctx.fillStyle = "#1E293B";
+      ctx.font = "10px Tajawal, sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText(FURNITURE_KINDS[f.kind]?.label || "", fx + (w * PPM) / 2, fy + (fd * PPM) / 2 + 3);
+      ctx.textAlign = "start";
     });
   });
 
@@ -725,19 +793,25 @@ export default function ArchitectStudio({ session }) {
   const [wallColor, setWallColor] = useState(WALL_COLORS[0].hex);
   const [autoRotate, setAutoRotate] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
-  const [placeMode, setPlaceMode] = useState(null); // null | 'door' | 'window'
+  const [placeMode, setPlaceMode] = useState(null); // null | 'door' | 'window' | 'furniture:<kind>'
   const [selectedOpening, setSelectedOpening] = useState(null); // {id, roomId, wall, position, kind} | null
   const [movingOpeningId, setMovingOpeningId] = useState(null);
+  const [selectedFurniture, setSelectedFurniture] = useState(null); // {id, roomId, kind, x, y, rotation} | null
+  const [movingFurnitureId, setMovingFurnitureId] = useState(null);
   const [currentFloor, setCurrentFloor] = useState(0);
   const [printData, setPrintData] = useState(null);
   const [confirmDeleteFloor, setConfirmDeleteFloor] = useState(false);
 
   useEffect(() => {
     setSelectedOpening(null);
+    setSelectedFurniture(null);
   }, [currentFloor]);
 
   useEffect(() => {
-    if (!placeMode) setMovingOpeningId(null);
+    if (!placeMode) {
+      setMovingOpeningId(null);
+      setMovingFurnitureId(null);
+    }
   }, [placeMode]);
 
   const sharedBoundaries = useMemo(() => computeSharedBoundaries(rooms), [rooms]);
@@ -803,6 +877,22 @@ export default function ArchitectStudio({ session }) {
         ctx.lineTo(m.x2 * PPM, m.y2 * PPM);
         ctx.stroke();
       });
+
+      (r.furniture || []).forEach((f) => {
+        const { w, d: fd } = furnitureFootprint(f.kind, f.rotation || 0);
+        const fx = (r.gx + f.x - w / 2) * PPM, fy = (r.gy + f.y - fd / 2) * PPM;
+        const isSel = selectedFurniture?.id === f.id;
+        ctx.fillStyle = isSel ? "#22D3EE55" : "#A9895C55";
+        ctx.fillRect(fx, fy, w * PPM, fd * PPM);
+        ctx.strokeStyle = isSel ? "#22D3EE" : "#A9895C";
+        ctx.lineWidth = isSel ? 2 : 1.5;
+        ctx.strokeRect(fx, fy, w * PPM, fd * PPM);
+        ctx.fillStyle = "#EAF0F8";
+        ctx.font = "10px Tajawal, sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText(FURNITURE_KINDS[f.kind]?.label || "", fx + (w * PPM) / 2, fy + (fd * PPM) / 2 + 3);
+        ctx.textAlign = "start";
+      });
     });
 
     const d = draftRef.current;
@@ -831,7 +921,7 @@ export default function ArchitectStudio({ session }) {
         ctx.globalAlpha = 1;
       }
     }
-  }, [rooms, selectedId, gridW, gridH, placeMode, currentFloor]);
+  }, [rooms, selectedId, selectedFurniture, gridW, gridH, placeMode, currentFloor]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -859,6 +949,13 @@ export default function ArchitectStudio({ session }) {
   }
 
   function handlePointerDown(e) {
+    if (placeMode?.startsWith("furniture:")) {
+      const kind = placeMode.slice("furniture:".length);
+      const { x, y } = getMeterCoordsRaw(e);
+      const hit = hitTestRoomForFurniture(rooms.filter((r) => (r.floor ?? 0) === currentFloor), x, y, kind, movingFurnitureId);
+      if (hit) placeFurniture(hit.roomId, kind, hit.x, hit.y);
+      return;
+    }
     if (placeMode) {
       const { x, y } = getMeterCoordsRaw(e);
       const width = placeMode === "door" ? DOOR_W : WIN_W;
@@ -867,19 +964,36 @@ export default function ArchitectStudio({ session }) {
       return;
     }
     const raw = getMeterCoordsRaw(e);
-    const openingHit = hitTestOpenings(rooms.filter((r) => (r.floor ?? 0) === currentFloor), raw.x, raw.y);
+    const floorRoomsNow = rooms.filter((r) => (r.floor ?? 0) === currentFloor);
+    const openingHit = hitTestOpenings(floorRoomsNow, raw.x, raw.y);
     if (openingHit) {
       setSelectedOpening(openingHit);
+      setSelectedFurniture(null);
+      setSelectedId(null);
+      return;
+    }
+    const furnitureHit = hitTestFurniture(floorRoomsNow, raw.x, raw.y);
+    if (furnitureHit) {
+      setSelectedFurniture(furnitureHit);
+      setSelectedOpening(null);
       setSelectedId(null);
       return;
     }
     setSelectedOpening(null);
+    setSelectedFurniture(null);
     const { x, y } = getMeterCoords(e);
     draggingRef.current = true;
     draftRef.current = { sx: x, sy: y, ex: x, ey: y };
     setSelectedId(null);
   }
   function handlePointerMove(e) {
+    if (placeMode?.startsWith("furniture:")) {
+      const kind = placeMode.slice("furniture:".length);
+      const { x, y } = getMeterCoordsRaw(e);
+      hoverRef.current = hitTestRoomForFurniture(rooms.filter((r) => (r.floor ?? 0) === currentFloor), x, y, kind, movingFurnitureId);
+      drawPlan();
+      return;
+    }
     if (placeMode) {
       const { x, y } = getMeterCoordsRaw(e);
       const width = placeMode === "door" ? DOOR_W : WIN_W;
@@ -909,7 +1023,7 @@ export default function ArchitectStudio({ session }) {
       const { data, error } = await supabase
         .from("rooms")
         .insert({ project_id: project.id, name: ROOM_TYPES[0], gx, gy, gw, gh, color: roomColor, floor: currentFloor, has_roof: false })
-        .select("*, openings(*)")
+        .select("*, openings(*), furniture(*)")
         .single();
       if (error) { console.error("insert room failed", error); drawPlan(); return; }
       setRooms((prev) => [...prev, data]);
@@ -962,6 +1076,60 @@ export default function ArchitectStudio({ session }) {
     setSelectedOpening(null);
     setMovingOpeningId(opening.id);
     setPlaceMode(opening.kind);
+  }
+
+  async function placeFurniture(roomId, kind, x, y) {
+    if (movingFurnitureId) {
+      const furnitureId = movingFurnitureId;
+      const { data, error } = await supabase
+        .from("furniture")
+        .update({ room_id: roomId, x, y })
+        .eq("id", furnitureId)
+        .select()
+        .single();
+      if (error) { console.error("move furniture failed", error); return; }
+      setRooms((prev) => prev.map((r) => {
+        const withoutOld = (r.furniture || []).filter((f) => f.id !== furnitureId);
+        return { ...r, furniture: r.id === roomId ? [...withoutOld, data] : withoutOld };
+      }));
+      setMovingFurnitureId(null);
+      setPlaceMode(null);
+      hoverRef.current = null;
+      drawPlan();
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("furniture")
+      .insert({ room_id: roomId, kind, x, y })
+      .select()
+      .single();
+    if (error) { console.error("insert furniture failed", error); return; }
+    setRooms((prev) => prev.map((r) => (r.id === roomId ? { ...r, furniture: [...(r.furniture || []), data] } : r)));
+    // نضل بوضع الإضافة (بلا setPlaceMode(null)) — نفس منطق الأبواب/النوافذ، تسمح بإضافة
+    // أكتر من قطعة ورا بعض بلا داعي لإعادة الضغط على الزر كل مرة
+    drawPlan();
+  }
+
+  async function deleteFurniture(item) {
+    setRooms((prev) => prev.map((r) => (r.id === item.roomId ? { ...r, furniture: (r.furniture || []).filter((f) => f.id !== item.id) } : r)));
+    setSelectedFurniture(null);
+    const { error } = await supabase.from("furniture").delete().eq("id", item.id);
+    if (error) console.error("delete furniture failed", error);
+  }
+
+  function startMoveFurniture(item) {
+    setSelectedFurniture(null);
+    setMovingFurnitureId(item.id);
+    setPlaceMode(`furniture:${item.kind}`);
+  }
+
+  async function rotateFurniture(item) {
+    const nextRotation = (item.rotation + 90) % 360;
+    setRooms((prev) => prev.map((r) => (r.id === item.roomId ? { ...r, furniture: (r.furniture || []).map((f) => (f.id === item.id ? { ...f, rotation: nextRotation } : f)) } : r)));
+    setSelectedFurniture((s) => (s && s.id === item.id ? { ...s, rotation: nextRotation } : s));
+    const { error } = await supabase.from("furniture").update({ rotation: nextRotation }).eq("id", item.id);
+    if (error) console.error("rotate furniture failed", error);
   }
 
   async function renameRoom(id, name) {
@@ -1040,7 +1208,7 @@ export default function ArchitectStudio({ session }) {
       { project_id: project.id, name: "حمام", gx: 6.5, gy: 6.5, gw: 3, gh: 4, color: ROOM_COLORS[3].hex, floor: currentFloor, has_roof: false },
     ];
     await supabase.from("rooms").delete().eq("project_id", project.id).eq("floor", currentFloor);
-    const { data, error } = await supabase.from("rooms").insert(sample).select("*, openings(*)");
+    const { data, error } = await supabase.from("rooms").insert(sample).select("*, openings(*), furniture(*)");
     if (error) { console.error("load sample failed", error); return; }
     setRooms((prev) => [...prev.filter((r) => (r.floor ?? 0) !== currentFloor), ...data]);
     setSelectedId(null);
@@ -1077,7 +1245,7 @@ export default function ArchitectStudio({ session }) {
       if (proj) {
         const [phasesData, roomsRes] = await Promise.all([
           fetchPhasesForProject(proj.id),
-          supabase.from("rooms").select("*, openings(*)").eq("project_id", proj.id),
+          supabase.from("rooms").select("*, openings(*), furniture(*)").eq("project_id", proj.id),
         ]);
         if (cancelled) return;
         setProject(proj);
@@ -1167,7 +1335,7 @@ export default function ArchitectStudio({ session }) {
     setSwitcherOpen(false);
     const [phasesData, roomsRes] = await Promise.all([
       fetchPhasesForProject(proj.id),
-      supabase.from("rooms").select("*, openings(*)").eq("project_id", proj.id),
+      supabase.from("rooms").select("*, openings(*), furniture(*)").eq("project_id", proj.id),
     ]);
     setProject(proj);
     setPhases(phasesData);
@@ -1417,6 +1585,34 @@ export default function ArchitectStudio({ session }) {
               </div>
             )}
 
+            {view === "plan" && (
+              <div>
+                <p className="text-xs font-semibold text-slate-400 mb-2 flex items-center gap-1.5"><Armchair size={13}/> الأثاث</p>
+                <div className="grid grid-cols-3 gap-2">
+                  {Object.entries(FURNITURE_KINDS).map(([kind, meta]) => (
+                    <button
+                      key={kind}
+                      disabled={floorRooms.length === 0}
+                      onClick={() => { setSelectedOpening(null); setSelectedFurniture(null); setMovingFurnitureId(null); setPlaceMode((m) => (m === `furniture:${kind}` ? null : `furniture:${kind}`)); }}
+                      className={`flex items-center justify-center text-center text-[10px] font-semibold rounded-md py-2 px-1 border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${placeMode === `furniture:${kind}` ? "bg-cyan-500 text-slate-950 border-cyan-500" : "bg-slate-800 hover:bg-slate-700 border-slate-700"}`}
+                    >
+                      {meta.label}
+                    </button>
+                  ))}
+                </div>
+                {placeMode?.startsWith("furniture:") && (
+                  <p className="text-[11px] text-cyan-300 mt-2 leading-relaxed">
+                    {movingFurnitureId ? "دوس داخل غرفة لنقل القطعة." : "دوس داخل أي غرفة لوضع القطعة."}
+                  </p>
+                )}
+                {selectedFurniture && (
+                  <p className="text-[11px] text-slate-400 mt-2 leading-relaxed">
+                    محدد: {FURNITURE_KINDS[selectedFurniture.kind]?.label} — دوس "نقل" أو "تدوير" أو "حذف" بالمخطط.
+                  </p>
+                )}
+              </div>
+            )}
+
             <div>
               <p className="text-xs font-semibold text-slate-400 mb-2">لون الأرضية للغرفة القادمة</p>
               <div className="flex flex-wrap gap-2">
@@ -1546,6 +1742,29 @@ export default function ArchitectStudio({ session }) {
                           <Move size={14} />
                         </button>
                         <button onClick={() => deleteOpening(selectedOpening)} title="حذف" className="p-1.5 rounded hover:bg-red-950 text-red-400">
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    );
+                  })()}
+                  {selectedFurniture && !placeMode && (() => {
+                    const room = floorRooms.find((r) => r.id === selectedFurniture.roomId);
+                    if (!room) return null;
+                    const { d } = furnitureFootprint(selectedFurniture.kind, selectedFurniture.rotation);
+                    const leftPct = clamp(((room.gx + selectedFurniture.x) / gridW) * 100, 2, 98);
+                    const topPct = clamp(((room.gy + selectedFurniture.y - d / 2) / gridH) * 100, 2, 98);
+                    return (
+                      <div
+                        className="absolute flex items-center gap-1 bg-slate-900 border border-cyan-500 rounded-md shadow-xl p-1 -translate-x-1/2 -translate-y-full z-10"
+                        style={{ left: `${leftPct}%`, top: `${topPct}%`, marginTop: -10 }}
+                      >
+                        <button onClick={() => startMoveFurniture(selectedFurniture)} title="نقل" className="p-1.5 rounded hover:bg-slate-800 text-slate-300">
+                          <Move size={14} />
+                        </button>
+                        <button onClick={() => rotateFurniture(selectedFurniture)} title="تدوير" className="p-1.5 rounded hover:bg-slate-800 text-slate-300">
+                          <RotateCw size={14} />
+                        </button>
+                        <button onClick={() => deleteFurniture(selectedFurniture)} title="حذف" className="p-1.5 rounded hover:bg-red-950 text-red-400">
                           <Trash2 size={14} />
                         </button>
                       </div>
