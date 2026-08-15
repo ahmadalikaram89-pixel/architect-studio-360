@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Box, Loader2, AlertTriangle, CheckCircle2, Mail, Lock, Eye, EyeOff } from "lucide-react";
+import { Loader2, AlertTriangle, CheckCircle2, Mail, Lock, Eye, EyeOff } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 
 const ERROR_MESSAGES = {
@@ -116,8 +116,8 @@ export default function Auth() {
     <div dir="rtl" className="w-full h-screen flex items-center justify-center bg-slate-950 text-slate-100 px-4" style={{ fontFamily: "'Tajawal', sans-serif" }}>
       <div className="w-full max-w-md">
         <div className="flex items-center gap-2.5 mb-6">
-          <div className="w-9 h-9 rounded-md bg-cyan-500 flex items-center justify-center">
-            <Box size={20} className="text-slate-950" />
+          <div className="w-9 h-9 rounded-md overflow-hidden shrink-0">
+            <img src="/logo.png" alt="مُخطِّط · استوديو 360" className="w-full h-full object-cover" />
           </div>
           <div>
             <h1 className="text-lg font-extrabold leading-none">مُخطِّط · استوديو 360</h1>
