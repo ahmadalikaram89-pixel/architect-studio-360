@@ -117,6 +117,65 @@ function openingMarkPoints(room, wall, position, width) {
   return { x1: x, y1: room.gy + position - half, x2: x, y2: room.gy + position + half };
 }
 
+const DIM_OFFSET = 0.35; // بالمتر — بعد خط القياس عن حافة الغرفة
+const DIM_EXT = 0.08; // بالمتر — مقدار تجاوز خط التمديد لخط القياس
+
+// خطوط قياس بأسلوب المخططات الهندسية حوالين كل ضلع من غرفة مستطيلة — خط قياس بخطوط تمديد
+// صغيرة بالطرفين ورقم الطول بالمنتصف (نفس فكرة القياسات على مخططات AutoCAD الاحترافية).
+// الغرف الحرة (points) برّا نطاق الإصدار الأول — نفس قيود الأبواب/النوافذ/الأثاث عليها،
+// ما إلها أطوال أضلاع فردية بسيطة زي المستطيل (بس مساحة إجمالية عبر roomArea)
+function drawRoomDimensions(ctx, room, colors) {
+  if (room.points) return;
+  const { gx, gy, gw, gh } = room;
+  ctx.save();
+  ctx.strokeStyle = colors.line;
+  ctx.fillStyle = colors.text;
+  ctx.lineWidth = 1;
+  ctx.font = "10px 'IBM Plex Mono', monospace";
+  ctx.textAlign = "center";
+
+  const line = (x1, y1, x2, y2) => {
+    ctx.beginPath();
+    ctx.moveTo(x1 * PPM, y1 * PPM);
+    ctx.lineTo(x2 * PPM, y2 * PPM);
+    ctx.stroke();
+  };
+
+  const topY = gy - DIM_OFFSET;
+  line(gx, gy, gx, topY - DIM_EXT);
+  line(gx + gw, gy, gx + gw, topY - DIM_EXT);
+  line(gx, topY, gx + gw, topY);
+  ctx.fillText(gw.toFixed(2), (gx + gw / 2) * PPM, (topY - 0.06) * PPM);
+
+  const bottomY = gy + gh + DIM_OFFSET;
+  line(gx, gy + gh, gx, bottomY + DIM_EXT);
+  line(gx + gw, gy + gh, gx + gw, bottomY + DIM_EXT);
+  line(gx, bottomY, gx + gw, bottomY);
+  ctx.fillText(gw.toFixed(2), (gx + gw / 2) * PPM, (bottomY + 0.16) * PPM);
+
+  const leftX = gx - DIM_OFFSET;
+  line(gx, gy, leftX - DIM_EXT, gy);
+  line(gx, gy + gh, leftX - DIM_EXT, gy + gh);
+  line(leftX, gy, leftX, gy + gh);
+  ctx.save();
+  ctx.translate(leftX * PPM - 6, (gy + gh / 2) * PPM);
+  ctx.rotate(-Math.PI / 2);
+  ctx.fillText(gh.toFixed(2), 0, 0);
+  ctx.restore();
+
+  const rightX = gx + gw + DIM_OFFSET;
+  line(gx + gw, gy, rightX + DIM_EXT, gy);
+  line(gx + gw, gy + gh, rightX + DIM_EXT, gy + gh);
+  line(rightX, gy, rightX, gy + gh);
+  ctx.save();
+  ctx.translate(rightX * PPM + 6, (gy + gh / 2) * PPM);
+  ctx.rotate(-Math.PI / 2);
+  ctx.fillText(gh.toFixed(2), 0, 0);
+  ctx.restore();
+
+  ctx.restore();
+}
+
 const FURNITURE_HIT_TOLERANCE = 0.12; // بالمتر — تسامح صغير للنقر قريب من حواف قطعة الأثاث
 
 // بعد فعّال (عرض/عمق) لقطعة أثاث حسب دورانها — 90/270 بتبادل العرض والعمق (بلا حاجة لمثلثات
@@ -274,6 +333,8 @@ function drawFloorPlanImage(floorRoomsList, gridW, gridH) {
     ctx.fillStyle = "#64748B";
     ctx.font = "11px 'IBM Plex Mono', monospace";
     ctx.fillText(`${r.gw.toFixed(1)} × ${r.gh.toFixed(1)} m`, x + 8, y + 36);
+
+    drawRoomDimensions(ctx, r, { line: "#94A3B8", text: "#334155" });
 
     (r.openings || []).forEach((o) => {
       const width = o.kind === "door" ? DOOR_W : WIN_W;
@@ -932,6 +993,7 @@ export default function ArchitectStudio({ session }) {
   const [printData, setPrintData] = useState(null);
   const [confirmDeleteFloor, setConfirmDeleteFloor] = useState(false);
   const [snapEnabled, setSnapEnabled] = useState(true);
+  const [showDimensions, setShowDimensions] = useState(false);
   const [polygonDrawMode, setPolygonDrawMode] = useState(false);
 
   useEffect(() => {
@@ -1029,6 +1091,8 @@ export default function ArchitectStudio({ session }) {
       ctx.font = "11px 'IBM Plex Mono', monospace";
       ctx.fillText(`${r.gw.toFixed(1)} × ${r.gh.toFixed(1)} m`, x + 8, y + 36);
 
+      if (showDimensions) drawRoomDimensions(ctx, r, { line: "#5B7A9E", text: "#9FB4D1" });
+
       (r.openings || []).forEach((o) => {
         const width = o.kind === "door" ? DOOR_W : WIN_W;
         const m = openingMarkPoints(r, o.wall, o.position, width);
@@ -1124,7 +1188,7 @@ export default function ArchitectStudio({ session }) {
         ctx.globalAlpha = 1;
       }
     }
-  }, [rooms, selectedId, selectedFurniture, stairsList, selectedStair, wallHeight, gridW, gridH, placeMode, currentFloor, polygonDrawMode]);
+  }, [rooms, selectedId, selectedFurniture, stairsList, selectedStair, wallHeight, gridW, gridH, placeMode, currentFloor, polygonDrawMode, showDimensions]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -1947,6 +2011,13 @@ export default function ArchitectStudio({ session }) {
                     className={`w-full flex items-center justify-center gap-1.5 text-xs font-semibold rounded-md py-2 border mt-2 transition-colors ${snapEnabled ? "bg-slate-800 hover:bg-slate-700 border-slate-700" : "bg-cyan-500 text-slate-950 border-cyan-500"}`}
                   >
                     <Ruler size={13}/> {snapEnabled ? "الصق بالشبكة: مفعّل" : "الصق بالشبكة: معطّل (دقة حرة)"}
+                  </button>
+
+                  <button
+                    onClick={() => setShowDimensions((s) => !s)}
+                    className={`w-full flex items-center justify-center gap-1.5 text-xs font-semibold rounded-md py-2 border mt-2 transition-colors ${showDimensions ? "bg-cyan-500 text-slate-950 border-cyan-500" : "bg-slate-800 hover:bg-slate-700 border-slate-700"}`}
+                  >
+                    <Ruler size={13}/> {showDimensions ? "إظهار القياسات: مفعّل" : "إظهار القياسات: معطّل"}
                   </button>
 
                   {polygonDrawMode ? (
