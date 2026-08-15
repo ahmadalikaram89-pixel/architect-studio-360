@@ -44,18 +44,20 @@ function PasswordField({ label, value, onChange, placeholder }) {
 }
 
 export default function Auth() {
-  const [mode, setMode] = useState("login"); // 'login' | 'signup'
+  const [mode, setMode] = useState("login"); // 'login' | 'signup' | 'reset'
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [checkEmail, setCheckEmail] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
 
   const isSignup = mode === "signup";
+  const isReset = mode === "reset";
   const canSubmit =
     email.trim().length > 0 &&
-    password.length >= 6 &&
+    (isReset || password.length >= 6) &&
     (!isSignup || password === confirmPassword) &&
     !loading;
 
@@ -63,6 +65,7 @@ export default function Auth() {
     setMode(next);
     setError("");
     setCheckEmail(false);
+    setResetSent(false);
     setPassword("");
     setConfirmPassword("");
   }
@@ -78,7 +81,13 @@ export default function Auth() {
 
     setLoading(true);
     try {
-      if (isSignup) {
+      if (isReset) {
+        const { error: resetError } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+          redirectTo: window.location.origin,
+        });
+        if (resetError) throw resetError;
+        setResetSent(true);
+      } else if (isSignup) {
         const { data, error: signUpError } = await supabase.auth.signUp({
           email: email.trim(),
           password,
@@ -117,28 +126,49 @@ export default function Auth() {
         </div>
 
         <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-5 space-y-4">
-          <div className="flex items-center gap-2 bg-slate-800/70 rounded-lg p-1">
-            <button
-              type="button"
-              onClick={() => switchMode("login")}
-              className={`flex-1 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${mode === "login" ? "bg-cyan-500 text-slate-950" : "text-slate-300 hover:text-white"}`}
-            >
-              تسجيل الدخول
-            </button>
-            <button
-              type="button"
-              onClick={() => switchMode("signup")}
-              className={`flex-1 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${mode === "signup" ? "bg-cyan-500 text-slate-950" : "text-slate-300 hover:text-white"}`}
-            >
-              حساب جديد
-            </button>
-          </div>
+          {isReset ? (
+            <div>
+              <h2 className="text-sm font-bold">إعادة تعيين كلمة السر</h2>
+              <p className="text-[11px] text-slate-400 mt-0.5">حطي إيميلك وبنبعتلك رابط لتعيين كلمة سر جديدة.</p>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 bg-slate-800/70 rounded-lg p-1">
+              <button
+                type="button"
+                onClick={() => switchMode("login")}
+                className={`flex-1 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${mode === "login" ? "bg-cyan-500 text-slate-950" : "text-slate-300 hover:text-white"}`}
+              >
+                تسجيل الدخول
+              </button>
+              <button
+                type="button"
+                onClick={() => switchMode("signup")}
+                className={`flex-1 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${mode === "signup" ? "bg-cyan-500 text-slate-950" : "text-slate-300 hover:text-white"}`}
+              >
+                حساب جديد
+              </button>
+            </div>
+          )}
 
           {checkEmail ? (
             <p className="flex items-start gap-2 text-xs text-emerald-300 bg-emerald-950/40 border border-emerald-900 rounded-md px-3 py-2.5 leading-relaxed">
               <CheckCircle2 size={15} className="shrink-0 mt-0.5" />
               تم إنشاء الحساب! افتحي بريدك الإلكتروني واضغطي على رابط التأكيد قبل تسجيل الدخول.
             </p>
+          ) : resetSent ? (
+            <>
+              <p className="flex items-start gap-2 text-xs text-emerald-300 bg-emerald-950/40 border border-emerald-900 rounded-md px-3 py-2.5 leading-relaxed">
+                <CheckCircle2 size={15} className="shrink-0 mt-0.5" />
+                تفقدي بريدك الإلكتروني — بعتنالك رابط لإعادة تعيين كلمة السر.
+              </p>
+              <button
+                type="button"
+                onClick={() => switchMode("login")}
+                className="text-xs text-cyan-400 hover:text-cyan-300"
+              >
+                رجوع لتسجيل الدخول
+              </button>
+            </>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
@@ -154,12 +184,14 @@ export default function Auth() {
                 />
               </div>
 
-              <PasswordField
-                label="كلمة السر"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="6 أحرف على الأقل"
-              />
+              {!isReset && (
+                <PasswordField
+                  label="كلمة السر"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="6 أحرف على الأقل"
+                />
+              )}
 
               {isSignup && (
                 <PasswordField
@@ -170,6 +202,16 @@ export default function Auth() {
                 />
               )}
 
+              {mode === "login" && (
+                <button
+                  type="button"
+                  onClick={() => switchMode("reset")}
+                  className="text-xs text-cyan-400 hover:text-cyan-300 -mt-2"
+                >
+                  نسيت كلمة السر؟
+                </button>
+              )}
+
               <button
                 type="submit"
                 disabled={!canSubmit}
@@ -177,12 +219,24 @@ export default function Auth() {
               >
                 {loading ? (
                   <>جارِ التحقق... <Loader2 size={16} className="animate-spin" /></>
+                ) : isReset ? (
+                  "إرسال رابط إعادة التعيين"
                 ) : isSignup ? (
                   "إنشاء الحساب"
                 ) : (
                   "تسجيل الدخول"
                 )}
               </button>
+
+              {isReset && (
+                <button
+                  type="button"
+                  onClick={() => switchMode("login")}
+                  className="w-full text-center text-xs text-slate-400 hover:text-slate-200"
+                >
+                  رجوع لتسجيل الدخول
+                </button>
+              )}
 
               {error && (
                 <p className="flex items-center gap-1.5 text-xs text-red-400 bg-red-950/40 border border-red-900 rounded-md px-2.5 py-2">
