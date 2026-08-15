@@ -73,8 +73,7 @@ git push -u origin main
 
 ## 5. الخطوة الجاية
 
-- قائمة لتصفح كل مشاريعك السابقة والتبديل بينها (حالياً بيتحمّل آخر مشروع تلقائياً)
-- أثاث ثلاثي الأبعاد جاهز، قياسات أدق، جدران مائلة، طوابق متعددة
+شايفة قائمة المهام القادمة بملف [`TODO.md`](./TODO.md).
 
 ---
 
@@ -87,10 +86,13 @@ architect-studio/
 │   ├── page.js          # الصفحة الرئيسية
 │   └── globals.css      # Tailwind + الخطوط العربية
 ├── components/
-│   └── ArchitectStudio.jsx   # كل منطق التطبيق (المخطط، 3D، المراحل)
+│   ├── ArchitectStudio.jsx   # كل منطق التطبيق (المخطط، الطوابق، المراحل)
+│   └── Auth.jsx              # شاشة تسجيل الدخول / حساب جديد
 ├── lib/
-│   └── supabaseClient.js     # اتصال Supabase
+│   ├── supabaseClient.js     # اتصال Supabase
+│   └── build3d.js            # منطق بناء مشهد الـ 3D (جدران، سقوف، فتحات)
 ├── supabase-schema.sql       # كل الجداول جاهزة للصق في SQL Editor
+├── TODO.md                   # قائمة المهام القادمة
 ├── .env.local                # مفاتيح قاعدة البيانات (لا يُرفع على GitHub)
 ├── .env.local.example        # نموذج فاضي للمفاتيح
 ├── package.json
