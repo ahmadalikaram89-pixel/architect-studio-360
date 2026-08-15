@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Box, Loader2, AlertTriangle, CheckCircle2, Mail, Lock } from "lucide-react";
+import { Box, Loader2, AlertTriangle, CheckCircle2, Mail, Lock, Eye, EyeOff } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 
 const ERROR_MESSAGES = {
@@ -12,6 +12,35 @@ const ERROR_MESSAGES = {
 
 function translateError(message) {
   return ERROR_MESSAGES[message] || message;
+}
+
+function PasswordField({ label, value, onChange, placeholder }) {
+  const [show, setShow] = useState(false);
+  return (
+    <div>
+      <label className="text-xs text-slate-400 flex items-center gap-1 mb-1.5"><Lock size={12} /> {label}</label>
+      <div className="relative" dir="ltr">
+        <input
+          type={show ? "text" : "password"}
+          required
+          minLength={6}
+          value={value}
+          onChange={onChange}
+          placeholder={placeholder}
+          className="w-full bg-slate-950 border border-slate-700 rounded-md pl-3 pr-9 py-2 text-sm outline-none focus:border-cyan-500"
+        />
+        <button
+          type="button"
+          onClick={() => setShow((s) => !s)}
+          tabIndex={-1}
+          title={show ? "إخفاء كلمة السر" : "إظهار كلمة السر"}
+          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+        >
+          {show ? <EyeOff size={15} /> : <Eye size={15} />}
+        </button>
+      </div>
+    </div>
+  );
 }
 
 export default function Auth() {
@@ -125,34 +154,20 @@ export default function Auth() {
                 />
               </div>
 
-              <div>
-                <label className="text-xs text-slate-400 flex items-center gap-1 mb-1.5"><Lock size={12} /> كلمة السر</label>
-                <input
-                  type="password"
-                  required
-                  minLength={6}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="6 أحرف على الأقل"
-                  dir="ltr"
-                  className="w-full bg-slate-950 border border-slate-700 rounded-md px-3 py-2 text-sm outline-none focus:border-cyan-500"
-                />
-              </div>
+              <PasswordField
+                label="كلمة السر"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="6 أحرف على الأقل"
+              />
 
               {isSignup && (
-                <div>
-                  <label className="text-xs text-slate-400 flex items-center gap-1 mb-1.5"><Lock size={12} /> تأكيد كلمة السر</label>
-                  <input
-                    type="password"
-                    required
-                    minLength={6}
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    placeholder="أعيدي كتابة كلمة السر"
-                    dir="ltr"
-                    className="w-full bg-slate-950 border border-slate-700 rounded-md px-3 py-2 text-sm outline-none focus:border-cyan-500"
-                  />
-                </div>
+                <PasswordField
+                  label="تأكيد كلمة السر"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="أعيدي كتابة كلمة السر"
+                />
               )}
 
               <button
