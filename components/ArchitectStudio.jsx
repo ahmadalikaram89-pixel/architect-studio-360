@@ -325,6 +325,17 @@ function clamp(v, a, b) {
   return Math.min(b, Math.max(a, v));
 }
 
+// شريط الأدوات العائم (نقل/تدوير/حذف) بيظهر عادةً فوق العنصر المحدد — لو العنصر قريب من
+// الحافة العليا للشبكة، الشريط بيصير خارج المنطقة المرئية (main عندها overflow-auto، ما
+// بتقدر تتمرر لمساحة سالبة) فيضل مخفي عن المستخدم بلا أي طريقة يوصله. الحل: نقلب الشريط
+// تحت العنصر بدل فوقه لو المساحة فوقه أقل من ارتفاعه التقريبي (بالبكسل)
+const TOOLBAR_H_PX = 56;
+function toolbarPlacement(topAnchorM, bottomAnchorM, gridH) {
+  const flip = topAnchorM * PPM < TOOLBAR_H_PX;
+  const anchorM = flip ? bottomAnchorM : topAnchorM;
+  return { pct: clamp((anchorM / gridH) * 100, 2, 98), flip };
+}
+
 function Viewport3D({ rooms, stairs, wallHeight, wallColor, autoRotate }) {
   const mountRef = useRef(null);
   const stateRef = useRef({});
@@ -415,8 +426,13 @@ function Viewport3D({ rooms, stairs, wallHeight, wallColor, autoRotate }) {
 
     function resize() {
       const w = mount.clientWidth, h = mount.clientHeight;
+      // قياس بحجم صفر ممكن ياخذ لحظة عابرة (لسا الـ layout ما استقر — خصوصاً بنافذة صغيرة/غير
+      // مكبّرة). استدعاء renderer.setSize بعرض أو ارتفاع صفر ممكن يكسر WebGL context بشكل دائم
+      // بمتصفحات/تعريفات كرافيك معيّنة، وResizeObserver بعدها ما بيقدر يصلحه ولو رجع القياس
+      // صحيح — فبنتجاهل القياس الصفري ونستنى استدعاء لاحق بحجم حقيقي
+      if (w === 0 || h === 0) return;
       renderer.setSize(w, h);
-      camera.aspect = w / Math.max(h, 1);
+      camera.aspect = w / h;
       camera.updateProjectionMatrix();
     }
     resize();
@@ -2180,11 +2196,12 @@ export default function ArchitectStudio({ session }) {
                     const width = selectedOpening.kind === "door" ? DOOR_W : WIN_W;
                     const m = openingMarkPoints(room, selectedOpening.wall, selectedOpening.position, width);
                     const leftPct = clamp(((m.x1 + m.x2) / 2 / gridW) * 100, 2, 98);
-                    const topPct = clamp(((m.y1 + m.y2) / 2 / gridH) * 100, 2, 98);
+                    const anchorM = (m.y1 + m.y2) / 2;
+                    const { pct: topPct, flip } = toolbarPlacement(anchorM, anchorM, gridH);
                     return (
                       <div
-                        className="absolute flex items-center gap-1 bg-slate-900 border border-cyan-500 rounded-md shadow-xl p-1 -translate-x-1/2 -translate-y-full z-10"
-                        style={{ left: `${leftPct}%`, top: `${topPct}%`, marginTop: -10 }}
+                        className={`absolute flex items-center gap-1 bg-slate-900 border border-cyan-500 rounded-md shadow-xl p-1 -translate-x-1/2 z-10 ${flip ? "" : "-translate-y-full"}`}
+                        style={{ left: `${leftPct}%`, top: `${topPct}%`, marginTop: flip ? 10 : -10 }}
                       >
                         <button onClick={() => startMoveOpening(selectedOpening)} title="نقل" className="p-1.5 rounded hover:bg-slate-800 text-slate-300">
                           <Move size={14} />
@@ -2200,11 +2217,13 @@ export default function ArchitectStudio({ session }) {
                     if (!room) return null;
                     const { d } = furnitureFootprint(selectedFurniture.kind, selectedFurniture.rotation);
                     const leftPct = clamp(((room.gx + selectedFurniture.x) / gridW) * 100, 2, 98);
-                    const topPct = clamp(((room.gy + selectedFurniture.y - d / 2) / gridH) * 100, 2, 98);
+                    const topM = room.gy + selectedFurniture.y - d / 2;
+                    const bottomM = room.gy + selectedFurniture.y + d / 2;
+                    const { pct: topPct, flip } = toolbarPlacement(topM, bottomM, gridH);
                     return (
                       <div
-                        className="absolute flex items-center gap-1 bg-slate-900 border border-cyan-500 rounded-md shadow-xl p-1 -translate-x-1/2 -translate-y-full z-10"
-                        style={{ left: `${leftPct}%`, top: `${topPct}%`, marginTop: -10 }}
+                        className={`absolute flex items-center gap-1 bg-slate-900 border border-cyan-500 rounded-md shadow-xl p-1 -translate-x-1/2 z-10 ${flip ? "" : "-translate-y-full"}`}
+                        style={{ left: `${leftPct}%`, top: `${topPct}%`, marginTop: flip ? 10 : -10 }}
                       >
                         <button onClick={() => startMoveFurniture(selectedFurniture)} title="نقل" className="p-1.5 rounded hover:bg-slate-800 text-slate-300">
                           <Move size={14} />
@@ -2222,11 +2241,13 @@ export default function ArchitectStudio({ session }) {
                     const h = floorToFloorHeight(rooms, selectedStair.floor, wallHeight);
                     const { d } = stairEffectiveFootprint(h, selectedStair.rotation);
                     const leftPct = clamp((selectedStair.x / gridW) * 100, 2, 98);
-                    const topPct = clamp(((selectedStair.y - d / 2) / gridH) * 100, 2, 98);
+                    const topM = selectedStair.y - d / 2;
+                    const bottomM = selectedStair.y + d / 2;
+                    const { pct: topPct, flip } = toolbarPlacement(topM, bottomM, gridH);
                     return (
                       <div
-                        className="absolute flex items-center gap-1 bg-slate-900 border border-cyan-500 rounded-md shadow-xl p-1 -translate-x-1/2 -translate-y-full z-10"
-                        style={{ left: `${leftPct}%`, top: `${topPct}%`, marginTop: -10 }}
+                        className={`absolute flex items-center gap-1 bg-slate-900 border border-cyan-500 rounded-md shadow-xl p-1 -translate-x-1/2 z-10 ${flip ? "" : "-translate-y-full"}`}
+                        style={{ left: `${leftPct}%`, top: `${topPct}%`, marginTop: flip ? 10 : -10 }}
                       >
                         <button onClick={() => startMoveStair(selectedStair)} title="نقل" className="p-1.5 rounded hover:bg-slate-800 text-slate-300">
                           <Move size={14} />
