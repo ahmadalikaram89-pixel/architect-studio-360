@@ -30,6 +30,16 @@ const LAND_TYPES = ["فيلا سكنية", "شقة / سكني متعدد", "مب
 
 const ROOM_TYPES = ["غرفة نوم", "صالة", "مطبخ", "حمام", "مدخل", "موزع", "تواليت"];
 
+const FLOOR_ORDINALS = [
+  "الطابق الأرضي", "الطابق الأول", "الطابق الثاني", "الطابق الثالث", "الطابق الرابع",
+  "الطابق الخامس", "الطابق السادس", "الطابق السابع", "الطابق الثامن", "الطابق التاسع",
+  "الطابق العاشر", "الطابق الحادي عشر", "الطابق الثاني عشر",
+];
+function floorLabel(n) {
+  return FLOOR_ORDINALS[n] || `الطابق ${n}`;
+}
+const FLOOR_CAP = 12;
+
 const WALL_SNAP_TOLERANCE = 0.3; // بالمتر — كافي لالتقاط جدار بسماكة 0.15م بدون ما يلتقط جدار غرفة تانية غلط
 
 function pointSegDist(px, py, x1, y1, x2, y2) {
@@ -151,12 +161,12 @@ function Viewport3D({ rooms, wallHeight, wallColor, autoRotate }) {
     const group = new THREE.Group();
     scene.add(group);
 
-    const center0 = computeCenter(rooms);
+    const center0 = computeCenter(rooms, wallHeight);
     const orbit = {
       theta: Math.PI / 4,
       phi: 1.0,
       radius: center0.radius,
-      target: new THREE.Vector3(0, Math.max(1, wallHeight * 0.55), 0),
+      target: new THREE.Vector3(0, center0.targetY, 0),
     };
 
     function updateCamera() {
@@ -623,6 +633,7 @@ export default function ArchitectStudio({ session }) {
   const [autoRotate, setAutoRotate] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
   const [placeMode, setPlaceMode] = useState(null); // null | 'door' | 'window'
+  const [currentFloor, setCurrentFloor] = useState(0);
 
   const canvasRef = useRef(null);
   const draftRef = useRef(null);
@@ -658,7 +669,9 @@ export default function ArchitectStudio({ session }) {
       ctx.stroke();
     }
 
-    rooms.forEach((r) => {
+    const floorRoomsList = rooms.filter((r) => (r.floor ?? 0) === currentFloor);
+
+    floorRoomsList.forEach((r) => {
       const x = r.gx * PPM, y = r.gy * PPM, rw = r.gw * PPM, rh = r.gh * PPM;
       ctx.fillStyle = r.color + "30";
       ctx.fillRect(x, y, rw, rh);
@@ -696,7 +709,7 @@ export default function ArchitectStudio({ session }) {
     }
 
     if (placeMode && hoverRef.current) {
-      const room = rooms.find((r) => r.id === hoverRef.current.roomId);
+      const room = floorRoomsList.find((r) => r.id === hoverRef.current.roomId);
       if (room) {
         const width = placeMode === "door" ? DOOR_W : WIN_W;
         const m = openingMarkPoints(room, hoverRef.current.wall, hoverRef.current.position, width);
@@ -710,7 +723,7 @@ export default function ArchitectStudio({ session }) {
         ctx.globalAlpha = 1;
       }
     }
-  }, [rooms, selectedId, gridW, gridH, placeMode]);
+  }, [rooms, selectedId, gridW, gridH, placeMode, currentFloor]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -741,7 +754,7 @@ export default function ArchitectStudio({ session }) {
     if (placeMode) {
       const { x, y } = getMeterCoordsRaw(e);
       const width = placeMode === "door" ? DOOR_W : WIN_W;
-      const hit = hitTestWalls(rooms, x, y, width);
+      const hit = hitTestWalls(rooms.filter((r) => (r.floor ?? 0) === currentFloor), x, y, width);
       if (hit) placeOpening(hit.roomId, hit.wall, placeMode, hit.position);
       return;
     }
@@ -754,7 +767,7 @@ export default function ArchitectStudio({ session }) {
     if (placeMode) {
       const { x, y } = getMeterCoordsRaw(e);
       const width = placeMode === "door" ? DOOR_W : WIN_W;
-      hoverRef.current = hitTestWalls(rooms, x, y, width);
+      hoverRef.current = hitTestWalls(rooms.filter((r) => (r.floor ?? 0) === currentFloor), x, y, width);
       drawPlan();
       return;
     }
@@ -779,7 +792,7 @@ export default function ArchitectStudio({ session }) {
     if (gw >= 1 && gh >= 1) {
       const { data, error } = await supabase
         .from("rooms")
-        .insert({ project_id: project.id, name: ROOM_TYPES[0], gx, gy, gw, gh, color: roomColor })
+        .insert({ project_id: project.id, name: ROOM_TYPES[0], gx, gy, gw, gh, color: roomColor, floor: currentFloor })
         .select("*, openings(*)")
         .single();
       if (error) { console.error("insert room failed", error); drawPlan(); return; }
@@ -817,24 +830,24 @@ export default function ArchitectStudio({ session }) {
 
   async function clearRooms() {
     if (!project) return;
-    setRooms([]);
+    setRooms((prev) => prev.filter((r) => (r.floor ?? 0) !== currentFloor));
     setSelectedId(null);
-    const { error } = await supabase.from("rooms").delete().eq("project_id", project.id);
+    const { error } = await supabase.from("rooms").delete().eq("project_id", project.id).eq("floor", currentFloor);
     if (error) console.error("clear rooms failed", error);
   }
 
   async function loadSample() {
     if (!project) return;
     const sample = [
-      { project_id: project.id, name: "صالة", gx: 1, gy: 1, gw: 6, gh: 5, color: ROOM_COLORS[0].hex },
-      { project_id: project.id, name: "مطبخ", gx: 7.5, gy: 1, gw: 4, gh: 5, color: ROOM_COLORS[1].hex },
-      { project_id: project.id, name: "غرفة نوم", gx: 1, gy: 6.5, gw: 5, gh: 4, color: ROOM_COLORS[2].hex },
-      { project_id: project.id, name: "حمام", gx: 6.5, gy: 6.5, gw: 3, gh: 4, color: ROOM_COLORS[3].hex },
+      { project_id: project.id, name: "صالة", gx: 1, gy: 1, gw: 6, gh: 5, color: ROOM_COLORS[0].hex, floor: currentFloor },
+      { project_id: project.id, name: "مطبخ", gx: 7.5, gy: 1, gw: 4, gh: 5, color: ROOM_COLORS[1].hex, floor: currentFloor },
+      { project_id: project.id, name: "غرفة نوم", gx: 1, gy: 6.5, gw: 5, gh: 4, color: ROOM_COLORS[2].hex, floor: currentFloor },
+      { project_id: project.id, name: "حمام", gx: 6.5, gy: 6.5, gw: 3, gh: 4, color: ROOM_COLORS[3].hex, floor: currentFloor },
     ];
-    await supabase.from("rooms").delete().eq("project_id", project.id);
+    await supabase.from("rooms").delete().eq("project_id", project.id).eq("floor", currentFloor);
     const { data, error } = await supabase.from("rooms").insert(sample).select("*, openings(*)");
     if (error) { console.error("load sample failed", error); return; }
-    setRooms(data);
+    setRooms((prev) => [...prev.filter((r) => (r.floor ?? 0) !== currentFloor), ...data]);
     setSelectedId(null);
   }
 
@@ -891,6 +904,12 @@ export default function ArchitectStudio({ session }) {
       hoverRef.current = null;
     }
   }, [view]);
+
+  useEffect(() => {
+    setPlaceMode(null);
+    hoverRef.current = null;
+    setSelectedId(null);
+  }, [currentFloor]);
 
   async function signOut() {
     await supabase.auth.signOut();
@@ -973,7 +992,9 @@ export default function ArchitectStudio({ session }) {
     return <ProjectSetup onCreate={handleCreateProject} onSignOut={signOut} userEmail={user.email} />;
   }
 
-  const totalArea = rooms.reduce((s, r) => s + r.gw * r.gh, 0);
+  const floors = [...new Set([0, currentFloor, ...rooms.map((r) => r.floor ?? 0)])].sort((a, b) => a - b);
+  const floorRooms = rooms.filter((r) => (r.floor ?? 0) === currentFloor);
+  const totalArea = floorRooms.reduce((s, r) => s + r.gw * r.gh, 0);
 
   return (
     <div dir="rtl" className="w-full h-screen flex flex-col bg-slate-950 text-slate-100" style={{ fontFamily: "'Tajawal', sans-serif" }}>
@@ -1039,6 +1060,26 @@ export default function ArchitectStudio({ session }) {
       {(view === "plan" || view === "3d") && (
         <div className="flex-1 flex overflow-hidden">
           <aside className="w-72 shrink-0 border-l border-slate-800 bg-slate-900/40 overflow-y-auto p-4 space-y-6">
+            {view === "plan" && (
+              <div>
+                <p className="text-xs font-semibold text-slate-400 mb-2">الطوابق</p>
+                <div className="flex flex-wrap items-center gap-1 bg-slate-800/70 rounded-lg p-1">
+                  {floors.map((f) => (
+                    <button key={f} onClick={() => setCurrentFloor(f)}
+                      className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${f === currentFloor ? "bg-cyan-500 text-slate-950" : "text-slate-300 hover:text-white"}`}>
+                      {floorLabel(f)}
+                    </button>
+                  ))}
+                  {Math.max(0, ...floors) < FLOOR_CAP && (
+                    <button onClick={() => setCurrentFloor(Math.max(0, ...floors) + 1)} title="إضافة طابق"
+                      className="px-2.5 py-1.5 rounded-md text-slate-300 hover:text-white hover:bg-slate-700">
+                      <Plus size={13} />
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
             <div>
               <p className="text-xs font-semibold text-slate-400 mb-2 flex items-center gap-1.5"><Layers size={13}/> الأدوات</p>
               <p className="text-[11px] text-slate-500 mb-2 leading-relaxed">اسحب على الشبكة في المخطط لإنشاء غرفة جديدة.</p>
@@ -1057,14 +1098,14 @@ export default function ArchitectStudio({ session }) {
                 <p className="text-xs font-semibold text-slate-400 mb-2 flex items-center gap-1.5"><DoorOpen size={13}/> الأبواب والنوافذ</p>
                 <div className="flex gap-2">
                   <button
-                    disabled={rooms.length === 0}
+                    disabled={floorRooms.length === 0}
                     onClick={() => setPlaceMode((m) => (m === "window" ? null : "window"))}
                     className={`flex-1 flex items-center justify-center gap-1.5 text-xs font-semibold rounded-md py-2 border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${placeMode === "window" ? "bg-cyan-500 text-slate-950 border-cyan-500" : "bg-slate-800 hover:bg-slate-700 border-slate-700"}`}
                   >
                     <AppWindow size={13}/> نافذة+
                   </button>
                   <button
-                    disabled={rooms.length === 0}
+                    disabled={floorRooms.length === 0}
                     onClick={() => setPlaceMode((m) => (m === "door" ? null : "door"))}
                     className={`flex-1 flex items-center justify-center gap-1.5 text-xs font-semibold rounded-md py-2 border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${placeMode === "door" ? "bg-cyan-500 text-slate-950 border-cyan-500" : "bg-slate-800 hover:bg-slate-700 border-slate-700"}`}
                   >
@@ -1118,12 +1159,12 @@ export default function ArchitectStudio({ session }) {
 
             <div>
               <div className="flex items-center justify-between mb-2">
-                <p className="text-xs font-semibold text-slate-400">الغرف ({rooms.length})</p>
+                <p className="text-xs font-semibold text-slate-400">الغرف ({floorRooms.length})</p>
                 <p className="text-[11px] font-mono text-slate-500">{totalArea.toFixed(1)} م²</p>
               </div>
               <div className="space-y-1.5">
-                {rooms.length === 0 && <p className="text-[11px] text-slate-600">لا توجد غرف بعد.</p>}
-                {rooms.map((r) => (
+                {floorRooms.length === 0 && <p className="text-[11px] text-slate-600">لا توجد غرف بعد بهاد الطابق.</p>}
+                {floorRooms.map((r) => (
                   <div key={r.id} onClick={() => setSelectedId(r.id)}
                     className={`flex items-center justify-between rounded-md px-2.5 py-2 border cursor-pointer transition-colors ${selectedId === r.id ? "border-cyan-500 bg-slate-800/80" : "border-slate-800 bg-slate-900/60 hover:bg-slate-800/60"}`}>
                     <div className="flex items-center gap-2 min-w-0">
@@ -1162,10 +1203,10 @@ export default function ArchitectStudio({ session }) {
                     className="rounded-md border border-slate-800 shadow-2xl touch-none"
                     style={{ cursor: "crosshair", maxWidth: "100%", height: "auto" }}
                   />
-                  {rooms.length === 0 && (
+                  {floorRooms.length === 0 && (
                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                       <p className="text-sm text-slate-500 bg-slate-950/80 px-4 py-2 rounded-md border border-slate-800">
-                        اسحب مستطيلاً على الشبكة لإنشاء أول غرفة
+                        اسحب مستطيلاً على الشبكة لإنشاء أول غرفة بهاد الطابق
                       </p>
                     </div>
                   )}

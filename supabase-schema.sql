@@ -61,6 +61,7 @@ create table if not exists rooms (
   gw numeric not null,   -- العرض بالمتر
   gh numeric not null,   -- العمق بالمتر
   color text not null default '#C7714E',
+  floor integer not null default 0,   -- 0 = الطابق الأرضي، 1 = الأول...
   created_at timestamptz not null default now()
 );
 
