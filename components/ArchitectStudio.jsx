@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import * as THREE from "three";
 import {
-  Box, Layers, Trash2, RotateCcw, RotateCw, PlayCircle, PauseCircle, Ruler, Sparkles, X,
+  Layers, Trash2, RotateCcw, RotateCw, PlayCircle, PauseCircle, Ruler, Sparkles, X,
   MapPin, PencilRuler, Building2, FileCheck2, HardHat, ClipboardCheck, KeyRound,
   CheckCircle2, Circle, Clock3, ChevronLeft, FolderPlus, ChevronDown, ChevronUp, Plus, CalendarDays, UserRound,
   Loader2, AlertTriangle, LogOut, AppWindow, DoorOpen, Printer, Folders, Move, Armchair,
@@ -474,8 +474,8 @@ function ProjectSetup({ onCreate, onSignOut, userEmail, projectsList, onOpenProj
       <div className="w-full max-w-md">
         <div className="flex items-center justify-between gap-2.5 mb-6">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-md bg-cyan-500 flex items-center justify-center">
-              <Box size={20} className="text-slate-950" />
+            <div className="w-9 h-9 rounded-md overflow-hidden shrink-0">
+              <img src="/logo.png" alt="مُخطِّط · استوديو 360" className="w-full h-full object-cover" />
             </div>
             <div>
               <h1 className="text-lg font-extrabold leading-none">مُخطِّط · استوديو 360</h1>
@@ -1409,8 +1409,8 @@ export default function ArchitectStudio({ session }) {
 
       <header className="flex items-center justify-between border-b border-slate-800 bg-slate-900/60 px-5 py-3 shrink-0 flex-wrap gap-2">
         <div className="flex items-center gap-2.5 min-w-0">
-          <div className="w-8 h-8 rounded-md bg-cyan-500 flex items-center justify-center shrink-0">
-            <Box size={18} className="text-slate-950" />
+          <div className="w-8 h-8 rounded-md overflow-hidden shrink-0">
+            <img src="/logo.png" alt="مُخطِّط · استوديو 360" className="w-full h-full object-cover" />
           </div>
           <div className="min-w-0">
             <h1 className="text-sm font-extrabold leading-none truncate">{project.name}</h1>
