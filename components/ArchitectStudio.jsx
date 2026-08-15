@@ -28,7 +28,7 @@ const WALL_COLORS = [
 
 const LAND_TYPES = ["فيلا سكنية", "شقة / سكني متعدد", "مبنى تجاري", "أرض فارغة"];
 
-const ROOM_TYPES = ["غرفة نوم", "صالة", "مطبخ", "حمام", "مدخل", "موزع", "تواليت"];
+const ROOM_TYPES = ["غرفة نوم", "صالة", "مطبخ", "حمام", "مدخل", "موزع", "تواليت", "شرفة"];
 
 const FLOOR_ORDINALS = [
   "الطابق الأرضي", "الطابق الأول", "الطابق الثاني", "الطابق الثالث", "الطابق الرابع",
@@ -908,7 +908,7 @@ export default function ArchitectStudio({ session }) {
     if (gw >= 1 && gh >= 1) {
       const { data, error } = await supabase
         .from("rooms")
-        .insert({ project_id: project.id, name: ROOM_TYPES[0], gx, gy, gw, gh, color: roomColor, floor: currentFloor })
+        .insert({ project_id: project.id, name: ROOM_TYPES[0], gx, gy, gw, gh, color: roomColor, floor: currentFloor, has_roof: false })
         .select("*, openings(*)")
         .single();
       if (error) { console.error("insert room failed", error); drawPlan(); return; }
@@ -977,6 +977,15 @@ export default function ArchitectStudio({ session }) {
     if (error) console.error("delete room failed", error);
   }
 
+  async function toggleRoomRoof(id) {
+    const room = rooms.find((r) => r.id === id);
+    if (!room) return;
+    const hasRoof = !room.has_roof;
+    setRooms((prev) => prev.map((r) => (r.id === id ? { ...r, has_roof: hasRoof } : r)));
+    const { error } = await supabase.from("rooms").update({ has_roof: hasRoof }).eq("id", id);
+    if (error) console.error("toggle roof failed", error);
+  }
+
   async function clearRooms() {
     if (!project) return;
     setRooms((prev) => prev.filter((r) => (r.floor ?? 0) !== currentFloor));
@@ -1025,10 +1034,10 @@ export default function ArchitectStudio({ session }) {
   async function loadSample() {
     if (!project) return;
     const sample = [
-      { project_id: project.id, name: "صالة", gx: 1, gy: 1, gw: 6, gh: 5, color: ROOM_COLORS[0].hex, floor: currentFloor },
-      { project_id: project.id, name: "مطبخ", gx: 7.5, gy: 1, gw: 4, gh: 5, color: ROOM_COLORS[1].hex, floor: currentFloor },
-      { project_id: project.id, name: "غرفة نوم", gx: 1, gy: 6.5, gw: 5, gh: 4, color: ROOM_COLORS[2].hex, floor: currentFloor },
-      { project_id: project.id, name: "حمام", gx: 6.5, gy: 6.5, gw: 3, gh: 4, color: ROOM_COLORS[3].hex, floor: currentFloor },
+      { project_id: project.id, name: "صالة", gx: 1, gy: 1, gw: 6, gh: 5, color: ROOM_COLORS[0].hex, floor: currentFloor, has_roof: false },
+      { project_id: project.id, name: "مطبخ", gx: 7.5, gy: 1, gw: 4, gh: 5, color: ROOM_COLORS[1].hex, floor: currentFloor, has_roof: false },
+      { project_id: project.id, name: "غرفة نوم", gx: 1, gy: 6.5, gw: 5, gh: 4, color: ROOM_COLORS[2].hex, floor: currentFloor, has_roof: false },
+      { project_id: project.id, name: "حمام", gx: 6.5, gy: 6.5, gw: 3, gh: 4, color: ROOM_COLORS[3].hex, floor: currentFloor, has_roof: false },
     ];
     await supabase.from("rooms").delete().eq("project_id", project.id).eq("floor", currentFloor);
     const { data, error } = await supabase.from("rooms").insert(sample).select("*, openings(*)");
@@ -1442,6 +1451,29 @@ export default function ArchitectStudio({ session }) {
                   {autoRotate ? <PauseCircle size={16}/> : <PlayCircle size={16}/>}
                   {autoRotate ? "إيقاف الدوران التلقائي" : "تشغيل الدوران التلقائي"}
                 </button>
+              </div>
+            )}
+
+            {view === "3d" && (
+              <div>
+                <p className="text-xs font-semibold text-slate-400 mb-2">سطح الغرفة</p>
+                {(() => {
+                  const room = rooms.find((r) => r.id === selectedId);
+                  if (!room) {
+                    return <p className="text-[11px] text-slate-500 leading-relaxed">اختاري غرفة من القائمة تحت لإضافة أو إزالة سطحها.</p>;
+                  }
+                  return (
+                    <>
+                      <button onClick={() => toggleRoomRoof(room.id)}
+                        className={`w-full flex items-center justify-center gap-2 text-sm font-semibold rounded-md py-2 transition-colors ${room.has_roof ? "bg-cyan-500 text-slate-950" : "bg-slate-800 hover:bg-slate-700 border border-slate-700"}`}>
+                        {room.has_roof ? "إزالة سطح الغرفة" : "إضافة سطح للغرفة"}
+                      </button>
+                      <p className="text-[11px] text-slate-500 mt-2 leading-relaxed">
+                        الغرفة بلا سطح تظهر مكشوفة من فوق — مناسبة لشرفة أو تراس.
+                      </p>
+                    </>
+                  );
+                })()}
               </div>
             )}
 
