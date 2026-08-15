@@ -6,10 +6,10 @@ import {
   Box, Layers, Trash2, RotateCcw, PlayCircle, PauseCircle, Ruler, Sparkles, X,
   MapPin, PencilRuler, Building2, FileCheck2, HardHat, ClipboardCheck, KeyRound,
   CheckCircle2, Circle, Clock3, ChevronLeft, FolderPlus, ChevronDown, Plus, CalendarDays, UserRound,
-  Loader2, AlertTriangle, LogOut,
+  Loader2, AlertTriangle, LogOut, AppWindow, DoorOpen,
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
-import { computeCenter, rebuildGroup } from "../lib/build3d";
+import { computeCenter, rebuildGroup, DOOR_W, WIN_W } from "../lib/build3d";
 
 const ROOM_COLORS = [
   { name: "طوبي", hex: "#C7714E" },
@@ -27,6 +27,63 @@ const WALL_COLORS = [
 ];
 
 const LAND_TYPES = ["فيلا سكنية", "شقة / سكني متعدد", "مبنى تجاري", "أرض فارغة"];
+
+const ROOM_TYPES = ["غرفة نوم", "صالة", "مطبخ", "حمام", "مدخل", "موزع", "تواليت"];
+
+const WALL_SNAP_TOLERANCE = 0.3; // بالمتر — كافي لالتقاط جدار بسماكة 0.15م بدون ما يلتقط جدار غرفة تانية غلط
+
+function pointSegDist(px, py, x1, y1, x2, y2) {
+  const dx = x2 - x1, dy = y2 - y1;
+  const lenSq = dx * dx + dy * dy;
+  const t = lenSq === 0 ? 0 : clamp(((px - x1) * dx + (py - y1) * dy) / lenSq, 0, 1);
+  const cx = x1 + t * dx, cy = y1 + t * dy;
+  return { dist: Math.hypot(px - cx, py - cy), t };
+}
+
+// بيلاقي أقرب جدار (لأي غرفة) لنقطة ضغط/تمرير معيّنة، ضمن مسافة التقاط معقولة،
+// وبيتأكد إنه في مجال كافي للفتحة الجديدة بلا تداخل مع فتحة موجودة أصلاً
+function hitTestWalls(rooms, cx, cy, openingWidth) {
+  let best = null;
+  rooms.forEach((r) => {
+    const walls = [
+      { wall: "top", x1: r.gx, y1: r.gy, x2: r.gx + r.gw, y2: r.gy, length: r.gw },
+      { wall: "bottom", x1: r.gx, y1: r.gy + r.gh, x2: r.gx + r.gw, y2: r.gy + r.gh, length: r.gw },
+      { wall: "left", x1: r.gx, y1: r.gy, x2: r.gx, y2: r.gy + r.gh, length: r.gh },
+      { wall: "right", x1: r.gx + r.gw, y1: r.gy, x2: r.gx + r.gw, y2: r.gy + r.gh, length: r.gh },
+    ];
+    walls.forEach((w) => {
+      const { dist, t } = pointSegDist(cx, cy, w.x1, w.y1, w.x2, w.y2);
+      if (!best || dist < best.dist) best = { dist, roomId: r.id, wall: w.wall, length: w.length, rawPosition: t * w.length };
+    });
+  });
+
+  if (!best || best.dist > WALL_SNAP_TOLERANCE) return null;
+  if (best.length < openingWidth) return null;
+
+  const half = openingWidth / 2;
+  const position = clamp(best.rawPosition, half, best.length - half);
+
+  const room = rooms.find((r) => r.id === best.roomId);
+  const existing = (room.openings || []).filter((o) => o.wall === best.wall);
+  const overlaps = existing.some((o) => {
+    const ow = o.kind === "door" ? DOOR_W : WIN_W;
+    return position - half < o.position + ow / 2 && position + half > o.position - ow / 2;
+  });
+  if (overlaps) return null;
+
+  return { roomId: best.roomId, wall: best.wall, position };
+}
+
+// بيرجع نقطتين لرسم علامة فتحة على جدار (بمساحة المخطط 2D بالمتر)
+function openingMarkPoints(room, wall, position, width) {
+  const half = width / 2;
+  if (wall === "top" || wall === "bottom") {
+    const y = wall === "top" ? room.gy : room.gy + room.gh;
+    return { x1: room.gx + position - half, y1: y, x2: room.gx + position + half, y2: y };
+  }
+  const x = wall === "left" ? room.gx : room.gx + room.gw;
+  return { x1: x, y1: room.gy + position - half, x2: x, y2: room.gy + position + half };
+}
 
 // أيقونة كل مرحلة حسب رقمها الثابت (المحتوى نفسه بينشئه Trigger داخل قاعدة البيانات)
 const PHASE_ICONS = {
@@ -565,10 +622,12 @@ export default function ArchitectStudio({ session }) {
   const [wallColor, setWallColor] = useState(WALL_COLORS[0].hex);
   const [autoRotate, setAutoRotate] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
+  const [placeMode, setPlaceMode] = useState(null); // null | 'door' | 'window'
 
   const canvasRef = useRef(null);
   const draftRef = useRef(null);
   const draggingRef = useRef(false);
+  const hoverRef = useRef(null); // {roomId, wall, position} أثناء وضع الإضافة
 
   const gridW = project ? clamp(project.width, 6, 60) : 20;
   const gridH = project ? clamp(project.depth, 6, 60) : 15;
@@ -612,6 +671,17 @@ export default function ArchitectStudio({ session }) {
       ctx.fillStyle = "#8DA0BC";
       ctx.font = "11px 'IBM Plex Mono', monospace";
       ctx.fillText(`${r.gw.toFixed(1)} × ${r.gh.toFixed(1)} m`, x + 8, y + 36);
+
+      (r.openings || []).forEach((o) => {
+        const width = o.kind === "door" ? DOOR_W : WIN_W;
+        const m = openingMarkPoints(r, o.wall, o.position, width);
+        ctx.strokeStyle = o.kind === "door" ? "#8B5A2B" : "#9FD8E8";
+        ctx.lineWidth = 5;
+        ctx.beginPath();
+        ctx.moveTo(m.x1 * PPM, m.y1 * PPM);
+        ctx.lineTo(m.x2 * PPM, m.y2 * PPM);
+        ctx.stroke();
+      });
     });
 
     const d = draftRef.current;
@@ -624,7 +694,23 @@ export default function ArchitectStudio({ session }) {
       ctx.strokeRect(gx * PPM, gy * PPM, gw * PPM, gh * PPM);
       ctx.setLineDash([]);
     }
-  }, [rooms, selectedId, gridW, gridH]);
+
+    if (placeMode && hoverRef.current) {
+      const room = rooms.find((r) => r.id === hoverRef.current.roomId);
+      if (room) {
+        const width = placeMode === "door" ? DOOR_W : WIN_W;
+        const m = openingMarkPoints(room, hoverRef.current.wall, hoverRef.current.position, width);
+        ctx.strokeStyle = placeMode === "door" ? "#C88A5A" : "#C7EFFA";
+        ctx.lineWidth = 7;
+        ctx.globalAlpha = 0.8;
+        ctx.beginPath();
+        ctx.moveTo(m.x1 * PPM, m.y1 * PPM);
+        ctx.lineTo(m.x2 * PPM, m.y2 * PPM);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
+    }
+  }, [rooms, selectedId, gridW, gridH, placeMode]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -642,19 +728,47 @@ export default function ArchitectStudio({ session }) {
     return { x: snap(clamp(px / PPM, 0, gridW)), y: snap(clamp(py / PPM, 0, gridH)) };
   }
 
+  // إحداثيات بدون snapping — لازمة لاكتشاف أقرب جدار بدقة (لا نريد قفزات كل 0.5م)
+  function getMeterCoordsRaw(e) {
+    const canvas = canvasRef.current;
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width, scaleY = canvas.height / rect.height;
+    const px = (e.clientX - rect.left) * scaleX, py = (e.clientY - rect.top) * scaleY;
+    return { x: clamp(px / PPM, 0, gridW), y: clamp(py / PPM, 0, gridH) };
+  }
+
   function handlePointerDown(e) {
+    if (placeMode) {
+      const { x, y } = getMeterCoordsRaw(e);
+      const width = placeMode === "door" ? DOOR_W : WIN_W;
+      const hit = hitTestWalls(rooms, x, y, width);
+      if (hit) placeOpening(hit.roomId, hit.wall, placeMode, hit.position);
+      return;
+    }
     const { x, y } = getMeterCoords(e);
     draggingRef.current = true;
     draftRef.current = { sx: x, sy: y, ex: x, ey: y };
     setSelectedId(null);
   }
   function handlePointerMove(e) {
+    if (placeMode) {
+      const { x, y } = getMeterCoordsRaw(e);
+      const width = placeMode === "door" ? DOOR_W : WIN_W;
+      hoverRef.current = hitTestWalls(rooms, x, y, width);
+      drawPlan();
+      return;
+    }
     if (!draggingRef.current) return;
     const { x, y } = getMeterCoords(e);
     draftRef.current = { ...draftRef.current, ex: x, ey: y };
     drawPlan();
   }
   async function handlePointerUp() {
+    if (placeMode) {
+      hoverRef.current = null;
+      drawPlan();
+      return;
+    }
     if (!draggingRef.current) return;
     draggingRef.current = false;
     const d = draftRef.current;
@@ -663,17 +777,35 @@ export default function ArchitectStudio({ session }) {
     const gx = Math.min(d.sx, d.ex), gy = Math.min(d.sy, d.ey);
     const gw = Math.abs(d.ex - d.sx), gh = Math.abs(d.ey - d.sy);
     if (gw >= 1 && gh >= 1) {
-      const name = `غرفة ${rooms.length + 1}`;
       const { data, error } = await supabase
         .from("rooms")
-        .insert({ project_id: project.id, name, gx, gy, gw, gh, color: roomColor })
-        .select()
+        .insert({ project_id: project.id, name: ROOM_TYPES[0], gx, gy, gw, gh, color: roomColor })
+        .select("*, openings(*)")
         .single();
       if (error) { console.error("insert room failed", error); drawPlan(); return; }
       setRooms((prev) => [...prev, data]);
     } else {
       drawPlan();
     }
+  }
+
+  async function placeOpening(roomId, wall, kind, position) {
+    const { data, error } = await supabase
+      .from("openings")
+      .insert({ room_id: roomId, wall, kind, position })
+      .select()
+      .single();
+    if (error) { console.error("insert opening failed", error); return; }
+    setRooms((prev) => prev.map((r) => (r.id === roomId ? { ...r, openings: [...(r.openings || []), data] } : r)));
+    setPlaceMode(null);
+    hoverRef.current = null;
+    drawPlan();
+  }
+
+  async function renameRoom(id, name) {
+    setRooms((prev) => prev.map((r) => (r.id === id ? { ...r, name } : r)));
+    const { error } = await supabase.from("rooms").update({ name }).eq("id", id);
+    if (error) console.error("rename room failed", error);
   }
 
   async function deleteRoom(id) {
@@ -694,13 +826,13 @@ export default function ArchitectStudio({ session }) {
   async function loadSample() {
     if (!project) return;
     const sample = [
-      { project_id: project.id, name: "الصالة", gx: 1, gy: 1, gw: 6, gh: 5, color: ROOM_COLORS[0].hex },
-      { project_id: project.id, name: "المطبخ", gx: 7.5, gy: 1, gw: 4, gh: 5, color: ROOM_COLORS[1].hex },
-      { project_id: project.id, name: "غرفة النوم", gx: 1, gy: 6.5, gw: 5, gh: 4, color: ROOM_COLORS[2].hex },
-      { project_id: project.id, name: "الحمّام", gx: 6.5, gy: 6.5, gw: 3, gh: 4, color: ROOM_COLORS[3].hex },
+      { project_id: project.id, name: "صالة", gx: 1, gy: 1, gw: 6, gh: 5, color: ROOM_COLORS[0].hex },
+      { project_id: project.id, name: "مطبخ", gx: 7.5, gy: 1, gw: 4, gh: 5, color: ROOM_COLORS[1].hex },
+      { project_id: project.id, name: "غرفة نوم", gx: 1, gy: 6.5, gw: 5, gh: 4, color: ROOM_COLORS[2].hex },
+      { project_id: project.id, name: "حمام", gx: 6.5, gy: 6.5, gw: 3, gh: 4, color: ROOM_COLORS[3].hex },
     ];
     await supabase.from("rooms").delete().eq("project_id", project.id);
-    const { data, error } = await supabase.from("rooms").insert(sample).select();
+    const { data, error } = await supabase.from("rooms").insert(sample).select("*, openings(*)");
     if (error) { console.error("load sample failed", error); return; }
     setRooms(data);
     setSelectedId(null);
@@ -737,7 +869,7 @@ export default function ArchitectStudio({ session }) {
       if (proj) {
         const [phasesData, roomsRes] = await Promise.all([
           fetchPhasesForProject(proj.id),
-          supabase.from("rooms").select("*").eq("project_id", proj.id),
+          supabase.from("rooms").select("*, openings(*)").eq("project_id", proj.id),
         ]);
         if (cancelled) return;
         setProject(proj);
@@ -752,6 +884,13 @@ export default function ArchitectStudio({ session }) {
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (view !== "plan") {
+      setPlaceMode(null);
+      hoverRef.current = null;
+    }
+  }, [view]);
 
   async function signOut() {
     await supabase.auth.signOut();
@@ -913,6 +1052,33 @@ export default function ArchitectStudio({ session }) {
               </div>
             </div>
 
+            {view === "plan" && (
+              <div>
+                <p className="text-xs font-semibold text-slate-400 mb-2 flex items-center gap-1.5"><DoorOpen size={13}/> الأبواب والنوافذ</p>
+                <div className="flex gap-2">
+                  <button
+                    disabled={rooms.length === 0}
+                    onClick={() => setPlaceMode((m) => (m === "window" ? null : "window"))}
+                    className={`flex-1 flex items-center justify-center gap-1.5 text-xs font-semibold rounded-md py-2 border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${placeMode === "window" ? "bg-cyan-500 text-slate-950 border-cyan-500" : "bg-slate-800 hover:bg-slate-700 border-slate-700"}`}
+                  >
+                    <AppWindow size={13}/> نافذة+
+                  </button>
+                  <button
+                    disabled={rooms.length === 0}
+                    onClick={() => setPlaceMode((m) => (m === "door" ? null : "door"))}
+                    className={`flex-1 flex items-center justify-center gap-1.5 text-xs font-semibold rounded-md py-2 border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${placeMode === "door" ? "bg-cyan-500 text-slate-950 border-cyan-500" : "bg-slate-800 hover:bg-slate-700 border-slate-700"}`}
+                  >
+                    <DoorOpen size={13}/> باب+
+                  </button>
+                </div>
+                {placeMode && (
+                  <p className="text-[11px] text-cyan-300 mt-2 leading-relaxed">
+                    دوس على أي جدار بالمخطط لتحديد مكان {placeMode === "door" ? "الباب" : "النافذة"}.
+                  </p>
+                )}
+              </div>
+            )}
+
             <div>
               <p className="text-xs font-semibold text-slate-400 mb-2">لون الأرضية للغرفة القادمة</p>
               <div className="flex flex-wrap gap-2">
@@ -963,7 +1129,14 @@ export default function ArchitectStudio({ session }) {
                     <div className="flex items-center gap-2 min-w-0">
                       <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: r.color }} />
                       <div className="min-w-0">
-                        <p className="text-xs font-semibold truncate">{r.name}</p>
+                        <select
+                          value={r.name}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) => renameRoom(r.id, e.target.value)}
+                          className="text-xs font-semibold bg-transparent outline-none cursor-pointer max-w-[7.5rem] -mx-0.5 px-0.5 rounded hover:bg-slate-800/80 focus:bg-slate-800 focus:border focus:border-cyan-500"
+                        >
+                          {ROOM_TYPES.map((t) => <option key={t} value={t} className="bg-slate-900">{t}</option>)}
+                        </select>
                         <p className="text-[10px] font-mono text-slate-500">{(r.gw * r.gh).toFixed(1)} م²</p>
                       </div>
                     </div>

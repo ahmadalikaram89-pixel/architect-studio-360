@@ -64,10 +64,21 @@ create table if not exists rooms (
   created_at timestamptz not null default now()
 );
 
+-- جدول الأبواب والنوافذ المحددة على جدران الغرف (تلقائية عند الإنشاء + يدوية بالإضافة)
+create table if not exists openings (
+  id uuid primary key default gen_random_uuid(),
+  room_id uuid not null references rooms(id) on delete cascade,
+  wall text not null check (wall in ('top', 'bottom', 'left', 'right')),
+  kind text not null check (kind in ('door', 'window')),
+  position numeric not null check (position >= 0),
+  created_at timestamptz not null default now()
+);
+
 -- فهارس لتسريع الاستعلامات الشائعة
 create index if not exists idx_phases_project on phases(project_id);
 create index if not exists idx_subtasks_phase on subtasks(phase_id);
 create index if not exists idx_rooms_project on rooms(project_id);
+create index if not exists idx_openings_room on openings(room_id);
 
 -- ============================================================
 -- دالة تنشئ تلقائياً المراحل السبعة الافتراضية عند إنشاء مشروع جديد
@@ -125,6 +136,85 @@ create trigger trg_create_default_subtasks
   for each row execute function create_default_subtasks();
 
 -- ============================================================
+-- دالة تحسب مواقع نافذة أو نافذتين على جدار حسب طوله (تطابق computeWallOpenings في lib/build3d.js)
+-- ============================================================
+create or replace function default_window_positions(wall_length numeric)
+returns numeric[] as $$
+declare
+  win_w constant numeric := 0.9;
+  win_margin constant numeric := 0.4;
+  win_min_gap constant numeric := 0.6;
+  usable numeric;
+  win_count int;
+  total_w numeric;
+  start_all numeric;
+begin
+  usable := wall_length - 2 * win_margin;
+  if usable >= 2 * win_w + win_min_gap then
+    win_count := 2;
+  elsif usable >= win_w then
+    win_count := 1;
+  else
+    win_count := 0;
+  end if;
+
+  if win_count = 0 then
+    return array[]::numeric[];
+  end if;
+
+  total_w := win_count * win_w + (win_count - 1) * win_min_gap;
+  start_all := (wall_length - total_w) / 2;
+
+  if win_count = 1 then
+    return array[start_all + win_w / 2];
+  else
+    return array[start_all + win_w / 2, start_all + (win_w + win_min_gap) + win_w / 2];
+  end if;
+end;
+$$ language plpgsql immutable;
+
+-- ============================================================
+-- دالة تنشئ تلقائياً الأبواب والنوافذ الافتراضية عند إنشاء غرفة جديدة
+-- (نفس منطق computeWallOpenings في build3d.js: باب بالمنتصف على الجدار السفلي فقط،
+--  ونافذة أو نافذتين على باقي الجدران حسب الطول)
+-- ============================================================
+create or replace function create_default_openings()
+returns trigger as $$
+declare
+  door_w constant numeric := 1.0;
+  wpos numeric[];
+  p numeric;
+begin
+  if new.gw > door_w + 0.4 then
+    insert into openings (room_id, wall, kind, position)
+    values (new.id, 'bottom', 'door', new.gw / 2);
+  end if;
+
+  wpos := default_window_positions(new.gw);
+  foreach p in array wpos loop
+    insert into openings (room_id, wall, kind, position) values (new.id, 'top', 'window', p);
+  end loop;
+
+  wpos := default_window_positions(new.gh);
+  foreach p in array wpos loop
+    insert into openings (room_id, wall, kind, position) values (new.id, 'left', 'window', p);
+  end loop;
+
+  wpos := default_window_positions(new.gh);
+  foreach p in array wpos loop
+    insert into openings (room_id, wall, kind, position) values (new.id, 'right', 'window', p);
+  end loop;
+
+  return new;
+end;
+$$ language plpgsql;
+
+drop trigger if exists trg_create_default_openings on rooms;
+create trigger trg_create_default_openings
+  after insert on rooms
+  for each row execute function create_default_openings();
+
+-- ============================================================
 -- تفعيل الأمان (RLS) — كل مستخدم يشوف ويعدّل مشاريعه فقط
 -- (تسجيل الدخول عبر Supabase Auth بالإيميل وكلمة السر)
 -- ============================================================
@@ -132,6 +222,7 @@ alter table projects enable row level security;
 alter table phases enable row level security;
 alter table subtasks enable row level security;
 alter table rooms enable row level security;
+alter table openings enable row level security;
 
 create policy "own projects" on projects
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
@@ -161,4 +252,17 @@ create policy "own rooms" on rooms
     exists (select 1 from projects p where p.id = rooms.project_id and p.user_id = auth.uid())
   ) with check (
     exists (select 1 from projects p where p.id = rooms.project_id and p.user_id = auth.uid())
+  );
+
+create policy "own openings" on openings
+  for all using (
+    exists (
+      select 1 from rooms r join projects p on p.id = r.project_id
+      where r.id = openings.room_id and p.user_id = auth.uid()
+    )
+  ) with check (
+    exists (
+      select 1 from rooms r join projects p on p.id = r.project_id
+      where r.id = openings.room_id and p.user_id = auth.uid()
+    )
   );
