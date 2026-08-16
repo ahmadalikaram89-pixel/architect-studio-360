@@ -28,7 +28,7 @@ const WALL_COLORS = [
 
 const LAND_TYPES = ["فيلا سكنية", "شقة / سكني متعدد", "مبنى تجاري", "أرض فارغة"];
 
-const ROOM_TYPES = ["غرفة نوم", "صالة", "مطبخ", "حمام", "مدخل", "موزع", "تواليت", "شرفة"];
+const ROOM_TYPES = ["غرفة نوم", "صالة", "جلوس", "مضافة", "مطبخ", "حمام", "مدخل", "موزع", "تواليت", "شرفة"];
 
 const FLOOR_ORDINALS = [
   "الطابق الأرضي", "الطابق الأول", "الطابق الثاني", "الطابق الثالث", "الطابق الرابع",
@@ -173,6 +173,65 @@ function drawRoomDimensions(ctx, room, colors) {
   ctx.fillText(gh.toFixed(2), 0, 0);
   ctx.restore();
 
+  ctx.restore();
+}
+
+// اتجاه فتح كل باب — يفترض دايماً إنه الباب بيفتح لداخل الغرفة (قرار الإصدار الأول، بلا
+// عمود بقاعدة البيانات لاختيار الاتجاه)، والمفصلة (hinge) دايماً بالطرف الأول لعلامة الفتحة
+// (m.x1/m.y1 من openingMarkPoints). كل قيمة: زاوية الباب "مقفول" (منطبق على الجدار) وزاوية
+// الباب "مفتوح" (عمودي لداخل الغرفة)، بنظام زوايا canvas العادي (0 = +x، PI/2 = +y نزولاً)
+const DOOR_SWING = {
+  top: { closedAngle: 0, openAngle: Math.PI / 2, ccw: false },
+  bottom: { closedAngle: 0, openAngle: -Math.PI / 2, ccw: true },
+  left: { closedAngle: Math.PI / 2, openAngle: 0, ccw: true },
+  right: { closedAngle: Math.PI / 2, openAngle: Math.PI, ccw: false },
+};
+
+// قوس اتجاه فتح الباب + خط الباب المفتوح (الشيش) — نفس الرمز المعياري بالمخططات الهندسية
+function drawDoorSwing(ctx, room, opening, color) {
+  if (opening.kind !== "door") return;
+  const m = openingMarkPoints(room, opening.wall, opening.position, DOOR_W);
+  const cfg = DOOR_SWING[opening.wall];
+  if (!cfg) return;
+  const cx = m.x1, cy = m.y1;
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1;
+  ctx.setLineDash([3, 3]);
+  ctx.beginPath();
+  ctx.arc(cx * PPM, cy * PPM, DOOR_W * PPM, cfg.closedAngle, cfg.openAngle, cfg.ccw);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.moveTo(cx * PPM, cy * PPM);
+  ctx.lineTo((cx + DOOR_W * Math.cos(cfg.openAngle)) * PPM, (cy + DOOR_W * Math.sin(cfg.openAngle)) * PPM);
+  ctx.stroke();
+  ctx.restore();
+}
+
+// خطوط الدرجات — الرمز المعياري لسلم بمخطط هندسي (بدل مستطيل فاضي بكتابة "سلم" بس).
+// sx/sy بالبكسل (زاوية مربط الإحاطة)، w/sd بالمتر (بعد التبديل حسب الدوران — نفس مخرجات
+// stairEffectiveFootprint). عدد الخطوط محدود بـ 16 حتى لو numSteps الفعلي أكبر، تجنّب
+// ازدحام بصري بسلالم طوابق عالية الارتفاع
+function drawStairSymbol(ctx, sx, sy, w, sd, rotation, numSteps, color) {
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1;
+  const steps = clamp(numSteps, 2, 16);
+  const swapped = rotation === 90 || rotation === 270;
+  for (let i = 1; i < steps; i++) {
+    ctx.beginPath();
+    if (!swapped) {
+      const ty = sy + (sd * PPM * i) / steps;
+      ctx.moveTo(sx, ty);
+      ctx.lineTo(sx + w * PPM, ty);
+    } else {
+      const tx = sx + (w * PPM * i) / steps;
+      ctx.moveTo(tx, sy);
+      ctx.lineTo(tx, sy + sd * PPM);
+    }
+    ctx.stroke();
+  }
   ctx.restore();
 }
 
@@ -345,6 +404,7 @@ function drawFloorPlanImage(floorRoomsList, gridW, gridH) {
       ctx.moveTo(m.x1 * PPM, m.y1 * PPM);
       ctx.lineTo(m.x2 * PPM, m.y2 * PPM);
       ctx.stroke();
+      drawDoorSwing(ctx, r, o, "#8B5A2B");
     });
 
     (r.furniture || []).forEach((f) => {
@@ -1102,6 +1162,7 @@ export default function ArchitectStudio({ session }) {
         ctx.moveTo(m.x1 * PPM, m.y1 * PPM);
         ctx.lineTo(m.x2 * PPM, m.y2 * PPM);
         ctx.stroke();
+        drawDoorSwing(ctx, r, o, "#C88A5A");
       });
 
       (r.furniture || []).forEach((f) => {
@@ -1123,18 +1184,21 @@ export default function ArchitectStudio({ session }) {
 
     stairsList.filter((s) => (s.floor ?? 0) === currentFloor).forEach((s) => {
       const h = floorToFloorHeight(rooms, currentFloor, wallHeight);
-      const { w, d: sd } = stairEffectiveFootprint(h, s.rotation || 0);
-      const sx = (s.x - w / 2) * PPM, sy = (s.y - sd / 2) * PPM;
+      const rotation = s.rotation || 0;
+      const { numSteps } = stairFootprint(h);
+      const { w: fw, d: fd } = stairEffectiveFootprint(h, rotation);
+      const sx = (s.x - fw / 2) * PPM, sy = (s.y - fd / 2) * PPM;
       const isSel = selectedStair?.id === s.id;
       ctx.fillStyle = isSel ? "#22D3EE55" : "#8DA0BC44";
-      ctx.fillRect(sx, sy, w * PPM, sd * PPM);
+      ctx.fillRect(sx, sy, fw * PPM, fd * PPM);
       ctx.strokeStyle = isSel ? "#22D3EE" : "#8DA0BC";
       ctx.lineWidth = isSel ? 2 : 1.5;
-      ctx.strokeRect(sx, sy, w * PPM, sd * PPM);
+      ctx.strokeRect(sx, sy, fw * PPM, fd * PPM);
+      drawStairSymbol(ctx, sx, sy, fw, fd, rotation, numSteps, isSel ? "#22D3EE" : "#8DA0BC");
       ctx.fillStyle = "#EAF0F8";
       ctx.font = "10px Tajawal, sans-serif";
       ctx.textAlign = "center";
-      ctx.fillText("سلم", sx + (w * PPM) / 2, sy + (sd * PPM) / 2 + 3);
+      ctx.fillText("سلم", sx + (fw * PPM) / 2, sy + (fd * PPM) / 2 + 3);
       ctx.textAlign = "start";
     });
 
