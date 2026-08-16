@@ -56,7 +56,17 @@ function pointSegDist(px, py, x1, y1, x2, y2) {
 function hitTestWalls(rooms, cx, cy, openingWidth, kind, sharedRanges, excludeOpeningId) {
   let best = null;
   rooms.forEach((r) => {
-    if (r.points) return; // الغرف الحرة جدرانها صلبة بلا أبواب/نوافذ بالإصدار الأول
+    if (r.points) {
+      // أضلاع الشكل الحر — بلا استبعاد جدران مشتركة (الغرف الحرة ما بتدمج جدران أصلاً)
+      for (let i = 0; i < r.points.length; i++) {
+        const p1 = r.points[i], p2 = r.points[(i + 1) % r.points.length];
+        const length = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+        const { dist, t } = pointSegDist(cx, cy, p1.x, p1.y, p2.x, p2.y);
+        const rawPosition = t * length;
+        if (!best || dist < best.dist) best = { dist, roomId: r.id, edgeIndex: i, length, rawPosition };
+      }
+      return;
+    }
     const walls = [
       { wall: "top", x1: r.gx, y1: r.gy, x2: r.gx + r.gw, y2: r.gy, length: r.gw },
       { wall: "bottom", x1: r.gx, y1: r.gy + r.gh, x2: r.gx + r.gw, y2: r.gy + r.gh, length: r.gw },
@@ -79,16 +89,21 @@ function hitTestWalls(rooms, cx, cy, openingWidth, kind, sharedRanges, excludeOp
 
   const half = openingWidth / 2;
   const position = clamp(best.rawPosition, half, best.length - half);
+  const isEdge = best.wall == null;
 
   const room = rooms.find((r) => r.id === best.roomId);
-  const existing = (room.openings || []).filter((o) => o.wall === best.wall && o.id !== excludeOpeningId);
+  const existing = (room.openings || []).filter((o) =>
+    (isEdge ? o.edge_index === best.edgeIndex : o.wall === best.wall) && o.id !== excludeOpeningId
+  );
   const overlaps = existing.some((o) => {
     const ow = o.kind === "door" ? DOOR_W : WIN_W;
     return position - half < o.position + ow / 2 && position + half > o.position - ow / 2;
   });
   if (overlaps) return null;
 
-  return { roomId: best.roomId, wall: best.wall, position };
+  return isEdge
+    ? { roomId: best.roomId, edgeIndex: best.edgeIndex, position }
+    : { roomId: best.roomId, wall: best.wall, position };
 }
 
 // بيلاقي أقرب فتحة (باب/نافذة) موجودة لنقطة نقر معيّنة، لتحديدها (حذف/نقل)
@@ -97,18 +112,30 @@ function hitTestOpenings(rooms, cx, cy) {
   rooms.forEach((r) => {
     (r.openings || []).forEach((o) => {
       const width = o.kind === "door" ? DOOR_W : WIN_W;
-      const m = openingMarkPoints(r, o.wall, o.position, width);
+      const m = openingMarkPoints(r, o, width);
       const { dist } = pointSegDist(cx, cy, m.x1, m.y1, m.x2, m.y2);
-      if (!best || dist < best.dist) best = { dist, roomId: r.id, id: o.id, wall: o.wall, position: o.position, kind: o.kind };
+      if (!best || dist < best.dist) best = { dist, roomId: r.id, id: o.id, wall: o.wall, edgeIndex: o.edge_index, position: o.position, kind: o.kind };
     });
   });
   if (!best || best.dist > OPENING_HIT_TOLERANCE) return null;
   return best;
 }
 
-// بيرجع نقطتين لرسم علامة فتحة على جدار (بمساحة المخطط 2D بالمتر)
-function openingMarkPoints(room, wall, position, width) {
+// بيرجع نقطتين لرسم علامة فتحة (بمساحة المخطط 2D بالمتر) — على جدار مستطيل مسمّى (wall)
+// أو على ضلع شكل حر (edge_index، القيمتين بالكائن opening، نفس شكل صف قاعدة البيانات)
+function openingMarkPoints(room, opening, width) {
   const half = width / 2;
+  if (room.points) {
+    const i = opening.edgeIndex ?? opening.edge_index;
+    const p1 = room.points[i], p2 = room.points[(i + 1) % room.points.length];
+    const len = Math.hypot(p2.x - p1.x, p2.y - p1.y) || 1;
+    const t0 = (opening.position - half) / len, t1 = (opening.position + half) / len;
+    return {
+      x1: p1.x + (p2.x - p1.x) * t0, y1: p1.y + (p2.y - p1.y) * t0,
+      x2: p1.x + (p2.x - p1.x) * t1, y2: p1.y + (p2.y - p1.y) * t1,
+    };
+  }
+  const { wall, position } = opening;
   if (wall === "top" || wall === "bottom") {
     const y = wall === "top" ? room.gy : room.gy + room.gh;
     return { x1: room.gx + position - half, y1: y, x2: room.gx + position + half, y2: y };
@@ -176,35 +203,56 @@ function drawRoomDimensions(ctx, room, colors) {
   ctx.restore();
 }
 
-// اتجاه فتح كل باب — يفترض دايماً إنه الباب بيفتح لداخل الغرفة (قرار الإصدار الأول، بلا
-// عمود بقاعدة البيانات لاختيار الاتجاه)، والمفصلة (hinge) دايماً بالطرف الأول لعلامة الفتحة
-// (m.x1/m.y1 من openingMarkPoints). كل قيمة: زاوية الباب "مقفول" (منطبق على الجدار) وزاوية
-// الباب "مفتوح" (عمودي لداخل الغرفة)، بنظام زوايا canvas العادي (0 = +x، PI/2 = +y نزولاً)
-const DOOR_SWING = {
-  top: { closedAngle: 0, openAngle: Math.PI / 2, ccw: false },
-  bottom: { closedAngle: 0, openAngle: -Math.PI / 2, ccw: true },
-  left: { closedAngle: Math.PI / 2, openAngle: 0, ccw: true },
-  right: { closedAngle: Math.PI / 2, openAngle: Math.PI, ccw: false },
-};
+// مركز تقريبي للغرفة — bounding box للمستطيل، ومعدّل رؤوس الشكل الحر (كافي لتحديد "جهة
+// الداخل" لقوس الباب، مش لازم يكون مركز المساحة الدقيق)
+function roomCentroid(room) {
+  if (room.points && room.points.length) {
+    const n = room.points.length;
+    return {
+      x: room.points.reduce((s, p) => s + p.x, 0) / n,
+      y: room.points.reduce((s, p) => s + p.y, 0) / n,
+    };
+  }
+  return { x: room.gx + room.gw / 2, y: room.gy + room.gh / 2 };
+}
 
-// قوس اتجاه فتح الباب + خط الباب المفتوح (الشيش) — نفس الرمز المعياري بالمخططات الهندسية
+// قوس اتجاه فتح الباب + خط الباب المفتوح (الشيش) — نفس الرمز المعياري بالمخططات الهندسية.
+// اتجاه الفتح يُحسب ديناميكياً (بدل جدول ثابت لأربع جهات) عشان يشتغل على أي زاوية جدار —
+// مايل بالغرف الحرة أو محاذي بالمستطيلة: عمودَي اتجاه الضلع (m.x2-m.x1)، وبنختار العمود
+// يلي بيأشّر لمركز الغرفة (الباب بيفتح لداخلها دايماً — قرار الإصدار الأول، بلا عمود
+// بقاعدة البيانات لاختيار الاتجاه). المفصلة (hinge) دايماً بالطرف الأول لعلامة الفتحة
 function drawDoorSwing(ctx, room, opening, color) {
   if (opening.kind !== "door") return;
-  const m = openingMarkPoints(room, opening.wall, opening.position, DOOR_W);
-  const cfg = DOOR_SWING[opening.wall];
-  if (!cfg) return;
+  const m = openingMarkPoints(room, opening, DOOR_W);
+  const dx = m.x2 - m.x1, dy = m.y2 - m.y1;
+  const len = Math.hypot(dx, dy);
+  if (len < 0.01) return;
+
+  const n1 = { x: -dy / len, y: dx / len }, n2 = { x: dy / len, y: -dx / len };
+  const c = roomCentroid(room);
+  const midX = (m.x1 + m.x2) / 2, midY = (m.y1 + m.y2) / 2;
+  const toCenter = { x: c.x - midX, y: c.y - midY };
+  const n = (n1.x * toCenter.x + n1.y * toCenter.y) >= 0 ? n1 : n2;
+
+  const closedAngle = Math.atan2(dy, dx);
+  const openAngle = Math.atan2(n.y, n.x);
+  let diff = openAngle - closedAngle;
+  while (diff > Math.PI) diff -= Math.PI * 2;
+  while (diff <= -Math.PI) diff += Math.PI * 2;
+  const ccw = diff < 0;
+
   const cx = m.x1, cy = m.y1;
   ctx.save();
   ctx.strokeStyle = color;
   ctx.lineWidth = 1;
   ctx.setLineDash([3, 3]);
   ctx.beginPath();
-  ctx.arc(cx * PPM, cy * PPM, DOOR_W * PPM, cfg.closedAngle, cfg.openAngle, cfg.ccw);
+  ctx.arc(cx * PPM, cy * PPM, DOOR_W * PPM, closedAngle, openAngle, ccw);
   ctx.stroke();
   ctx.setLineDash([]);
   ctx.beginPath();
   ctx.moveTo(cx * PPM, cy * PPM);
-  ctx.lineTo((cx + DOOR_W * Math.cos(cfg.openAngle)) * PPM, (cy + DOOR_W * Math.sin(cfg.openAngle)) * PPM);
+  ctx.lineTo((cx + DOOR_W * Math.cos(openAngle)) * PPM, (cy + DOOR_W * Math.sin(openAngle)) * PPM);
   ctx.stroke();
   ctx.restore();
 }
@@ -267,15 +315,39 @@ function hitTestFurniture(rooms, cx, cy) {
 // بيلاقي الغرفة يلي جوّاها نقطة معيّنة (احتواء صارم، مش أقرب غرفة) لوضع قطعة أثاث فيها،
 // بيحصر موضعها جوّا حدود الغرفة، ويرفض لو بتتراكب مع قطعة موجودة أصلاً (باستثناء excludeId
 // أثناء النقل) أو لو القطعة أكبر من الغرفة
+// اختبار نقطة-داخل-مضلع (ray casting قياسي) — لازم لاحتواء الأثاث بغرفة حرة الشكل بدل
+// احتواء مستطيل بسيط. points بإحداثيات مطلقة بالمتر (نفس نظام room.points)
+function pointInPolygon(points, x, y) {
+  let inside = false;
+  for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+    const xi = points[i].x, yi = points[i].y;
+    const xj = points[j].x, yj = points[j].y;
+    const intersects = yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi;
+    if (intersects) inside = !inside;
+  }
+  return inside;
+}
+
 function hitTestRoomForFurniture(rooms, cx, cy, kind, excludeId) {
-  const room = rooms.find((r) => !r.points && cx >= r.gx && cx <= r.gx + r.gw && cy >= r.gy && cy <= r.gy + r.gh);
+  const room = rooms.find((r) => (r.points ? pointInPolygon(r.points, cx, cy) : cx >= r.gx && cx <= r.gx + r.gw && cy >= r.gy && cy <= r.gy + r.gh));
   if (!room) return null;
   const { w, d } = furnitureFootprint(kind, 0);
-  if (room.gw < w || room.gh < d) return null;
-  const half_w = w / 2, half_d = d / 2;
-  const x = clamp(cx - room.gx, half_w, room.gw - half_w);
-  const y = clamp(cy - room.gy, half_d, room.gh - half_d);
 
+  let x, y;
+  if (room.points) {
+    // بلا حصر جوّا حدود الغرفة (نفس الحصر البسيط للمستطيل) — تحديد شكل مضلع حر دقيق أصعب
+    // بكتير (بيحتاج inset هندسي)؛ قرار الإصدار الأول: المركز لازم يكون جوّا الشكل بس، مو
+    // القطعة كاملها، فقطعة قريبة من جدار مايل ممكن تلامسه بصرياً — قيد موثّق
+    x = cx - room.gx;
+    y = cy - room.gy;
+  } else {
+    if (room.gw < w || room.gh < d) return null;
+    const half_w = w / 2, half_d = d / 2;
+    x = clamp(cx - room.gx, half_w, room.gw - half_w);
+    y = clamp(cy - room.gy, half_d, room.gh - half_d);
+  }
+
+  const half_w = w / 2, half_d = d / 2;
   const ax0 = x - half_w, ax1 = x + half_w, ay0 = y - half_d, ay1 = y + half_d;
   const overlaps = (room.furniture || []).some((f) => {
     if (f.id === excludeId) return false;
@@ -378,26 +450,24 @@ function drawFloorPlanImage(floorRoomsList, gridW, gridH) {
       ctx.fillStyle = "#64748B";
       ctx.font = "11px 'IBM Plex Mono', monospace";
       ctx.fillText(`${roomArea(r).toFixed(1)} m²`, x + 8, y + 36);
-      return;
+    } else {
+      ctx.fillStyle = r.color + "25";
+      ctx.fillRect(x, y, rw, rh);
+      ctx.strokeStyle = r.color;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x, y, rw, rh);
+      ctx.fillStyle = "#1E293B";
+      ctx.font = "700 13px Tajawal, sans-serif";
+      ctx.fillText(r.name, x + 8, y + 20);
+      ctx.fillStyle = "#64748B";
+      ctx.font = "11px 'IBM Plex Mono', monospace";
+      ctx.fillText(`${r.gw.toFixed(1)} × ${r.gh.toFixed(1)} m`, x + 8, y + 36);
+      drawRoomDimensions(ctx, r, { line: "#94A3B8", text: "#334155" });
     }
-
-    ctx.fillStyle = r.color + "25";
-    ctx.fillRect(x, y, rw, rh);
-    ctx.strokeStyle = r.color;
-    ctx.lineWidth = 2;
-    ctx.strokeRect(x, y, rw, rh);
-    ctx.fillStyle = "#1E293B";
-    ctx.font = "700 13px Tajawal, sans-serif";
-    ctx.fillText(r.name, x + 8, y + 20);
-    ctx.fillStyle = "#64748B";
-    ctx.font = "11px 'IBM Plex Mono', monospace";
-    ctx.fillText(`${r.gw.toFixed(1)} × ${r.gh.toFixed(1)} m`, x + 8, y + 36);
-
-    drawRoomDimensions(ctx, r, { line: "#94A3B8", text: "#334155" });
 
     (r.openings || []).forEach((o) => {
       const width = o.kind === "door" ? DOOR_W : WIN_W;
-      const m = openingMarkPoints(r, o.wall, o.position, width);
+      const m = openingMarkPoints(r, o, width);
       ctx.strokeStyle = o.kind === "door" ? "#8B5A2B" : "#0EA5E9";
       ctx.lineWidth = 5;
       ctx.beginPath();
@@ -1136,26 +1206,24 @@ export default function ArchitectStudio({ session }) {
         ctx.fillStyle = "#8DA0BC";
         ctx.font = "11px 'IBM Plex Mono', monospace";
         ctx.fillText(`${roomArea(r).toFixed(1)} م²`, x + 8, y + 36);
-        return;
+      } else {
+        ctx.fillStyle = r.color + "30";
+        ctx.fillRect(x, y, rw, rh);
+        ctx.strokeStyle = r.id === selectedId ? "#22D3EE" : r.color;
+        ctx.lineWidth = r.id === selectedId ? 3 : 2;
+        ctx.strokeRect(x, y, rw, rh);
+        ctx.fillStyle = "#EAF0F8";
+        ctx.font = "700 13px Tajawal, sans-serif";
+        ctx.fillText(r.name, x + 8, y + 20);
+        ctx.fillStyle = "#8DA0BC";
+        ctx.font = "11px 'IBM Plex Mono', monospace";
+        ctx.fillText(`${r.gw.toFixed(1)} × ${r.gh.toFixed(1)} m`, x + 8, y + 36);
+        if (showDimensions) drawRoomDimensions(ctx, r, { line: "#5B7A9E", text: "#9FB4D1" });
       }
-
-      ctx.fillStyle = r.color + "30";
-      ctx.fillRect(x, y, rw, rh);
-      ctx.strokeStyle = r.id === selectedId ? "#22D3EE" : r.color;
-      ctx.lineWidth = r.id === selectedId ? 3 : 2;
-      ctx.strokeRect(x, y, rw, rh);
-      ctx.fillStyle = "#EAF0F8";
-      ctx.font = "700 13px Tajawal, sans-serif";
-      ctx.fillText(r.name, x + 8, y + 20);
-      ctx.fillStyle = "#8DA0BC";
-      ctx.font = "11px 'IBM Plex Mono', monospace";
-      ctx.fillText(`${r.gw.toFixed(1)} × ${r.gh.toFixed(1)} m`, x + 8, y + 36);
-
-      if (showDimensions) drawRoomDimensions(ctx, r, { line: "#5B7A9E", text: "#9FB4D1" });
 
       (r.openings || []).forEach((o) => {
         const width = o.kind === "door" ? DOOR_W : WIN_W;
-        const m = openingMarkPoints(r, o.wall, o.position, width);
+        const m = openingMarkPoints(r, o, width);
         ctx.strokeStyle = o.kind === "door" ? "#8B5A2B" : "#9FD8E8";
         ctx.lineWidth = 5;
         ctx.beginPath();
@@ -1237,11 +1305,11 @@ export default function ArchitectStudio({ session }) {
       }
     }
 
-    if (placeMode && hoverRef.current) {
+    if ((placeMode === "door" || placeMode === "window") && hoverRef.current) {
       const room = floorRoomsList.find((r) => r.id === hoverRef.current.roomId);
       if (room) {
         const width = placeMode === "door" ? DOOR_W : WIN_W;
-        const m = openingMarkPoints(room, hoverRef.current.wall, hoverRef.current.position, width);
+        const m = openingMarkPoints(room, hoverRef.current, width);
         ctx.strokeStyle = placeMode === "door" ? "#C88A5A" : "#C7EFFA";
         ctx.lineWidth = 7;
         ctx.globalAlpha = 0.8;
@@ -1318,7 +1386,7 @@ export default function ArchitectStudio({ session }) {
       const { x, y } = getMeterCoordsRaw(e);
       const width = placeMode === "door" ? DOOR_W : WIN_W;
       const hit = hitTestWalls(rooms.filter((r) => (r.floor ?? 0) === currentFloor), x, y, width, placeMode, sharedRanges, movingOpeningId);
-      if (hit) placeOpening(hit.roomId, hit.wall, placeMode, hit.position);
+      if (hit) placeOpening(hit, placeMode);
       return;
     }
     const raw = getMeterCoordsRaw(e);
@@ -1473,12 +1541,16 @@ export default function ArchitectStudio({ session }) {
     if (error) console.error("update room bounds failed", error);
   }
 
-  async function placeOpening(roomId, wall, kind, position) {
+  async function placeOpening(hit, kind) {
+    const { roomId, position, wall, edgeIndex } = hit;
+    // إما جدار مستطيل مسمّى (wall) أو ضلع شكل حر (edge_index) — نفس قيد قاعدة البيانات
+    const wallFields = edgeIndex != null ? { wall: null, edge_index: edgeIndex } : { wall, edge_index: null };
+
     if (movingOpeningId) {
       const openingId = movingOpeningId;
       const { data, error } = await supabase
         .from("openings")
-        .update({ room_id: roomId, wall, position })
+        .update({ room_id: roomId, ...wallFields, position })
         .eq("id", openingId)
         .select()
         .single();
@@ -1496,7 +1568,7 @@ export default function ArchitectStudio({ session }) {
 
     const { data, error } = await supabase
       .from("openings")
-      .insert({ room_id: roomId, wall, kind, position })
+      .insert({ room_id: roomId, ...wallFields, kind, position })
       .select()
       .single();
     if (error) { console.error("insert opening failed", error); return; }
@@ -2329,7 +2401,7 @@ export default function ArchitectStudio({ session }) {
                     const room = floorRooms.find((r) => r.id === selectedOpening.roomId);
                     if (!room) return null;
                     const width = selectedOpening.kind === "door" ? DOOR_W : WIN_W;
-                    const m = openingMarkPoints(room, selectedOpening.wall, selectedOpening.position, width);
+                    const m = openingMarkPoints(room, selectedOpening, width);
                     const leftPct = clamp(((m.x1 + m.x2) / 2 / gridW) * 100, 2, 98);
                     const anchorM = (m.y1 + m.y2) / 2;
                     const { pct: topPct, flip } = toolbarPlacement(anchorM, anchorM, gridH);
