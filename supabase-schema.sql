@@ -73,10 +73,14 @@ create table if not exists rooms (
 create table if not exists openings (
   id uuid primary key default gen_random_uuid(),
   room_id uuid not null references rooms(id) on delete cascade,
-  wall text not null check (wall in ('top', 'bottom', 'left', 'right')),
+  wall text check (wall in ('top', 'bottom', 'left', 'right')),  -- NULL لفتحات الغرف الحرة (استخدمي edge_index)
+  edge_index integer,  -- رقم ضلع الغرفة الحرة (0-based بترتيب points)؛ NULL لغرف مستطيلة (استخدمي wall)
   kind text not null check (kind in ('door', 'window')),
   position numeric not null check (position >= 0),
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  constraint openings_wall_xor_edge_check check (
+    (wall is not null and edge_index is null) or (wall is null and edge_index is not null)
+  )
 );
 
 -- جدول قطع الأثاث الجاهزة المضافة يدوياً للغرف (x/y = مركز مساحة القطعة، بالمتر من زاوية الغرفة)
