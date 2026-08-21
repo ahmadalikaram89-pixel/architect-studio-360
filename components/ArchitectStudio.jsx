@@ -4,9 +4,11 @@ import React, { useEffect, useMemo, useRef, useState, useCallback } from "react"
 import {
   Layers, Trash2, RotateCw, PlayCircle, PauseCircle, Ruler, Sparkles, X, PencilRuler,
   FolderPlus, ChevronDown, ChevronUp, Plus,
-  Loader2, AlertTriangle, LogOut, AppWindow, DoorOpen, Printer, Folders, Move, Armchair, Undo2, Redo2, FileDown, Calculator, Box, HardHat,
+  Loader2, AlertTriangle, LogOut, AppWindow, DoorOpen, Printer, Folders, Move, Armchair, Undo2, Redo2, FileDown, Calculator, Box, HardHat, Users, Lock,
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
+import { computeMembership } from "../lib/collaboration";
+import MembersPanel from "./MembersPanel";
 import { DOOR_W, WIN_W, computeSharedBoundaries, sharedWallRanges, FURNITURE_KINDS, stairFootprint, roomArea } from "../lib/build3d";
 import {
   PPM, snap, clamp, floorLabel, FLOOR_CAP,
@@ -97,6 +99,8 @@ export default function ArchitectStudio({ session }) {
   const [printData, setPrintData] = useState(null);
   const [boqOpen, setBoqOpen] = useState(false);
   const [structuralOpen, setStructuralOpen] = useState(false);
+  const [members, setMembers] = useState([]);
+  const [membersOpen, setMembersOpen] = useState(false);
   const [confirmDeleteFloor, setConfirmDeleteFloor] = useState(false);
   const [snapEnabled, setSnapEnabled] = useState(true);
   const [showDimensions, setShowDimensions] = useState(false);
@@ -442,6 +446,7 @@ export default function ArchitectStudio({ session }) {
 
   function handlePointerDown(e) {
     if (polygonDrawMode) {
+      if (!canEdit) return;
       const { x, y } = getMeterCoordsForDraw(e);
       const pts = polygonDraftRef.current;
       if (pts.length >= 3) {
@@ -456,6 +461,7 @@ export default function ArchitectStudio({ session }) {
       return;
     }
     if (placeMode?.startsWith("furniture:")) {
+      if (!canEdit) return;
       const kind = placeMode.slice("furniture:".length);
       const { x, y } = getMeterCoordsRaw(e);
       const hit = hitTestRoomForFurniture(rooms.filter((r) => (r.floor ?? 0) === currentFloor), x, y, kind, movingFurnitureId);
@@ -463,6 +469,7 @@ export default function ArchitectStudio({ session }) {
       return;
     }
     if (placeMode === "stairs") {
+      if (!canEdit) return;
       const { x, y } = getMeterCoordsRaw(e);
       const h = floorToFloorHeight(rooms, currentFloor, wallHeight);
       const movingStair = movingStairId ? stairsList.find((s) => s.id === movingStairId) : null;
@@ -471,6 +478,7 @@ export default function ArchitectStudio({ session }) {
       return;
     }
     if (placeMode) {
+      if (!canEdit) return;
       const { x, y } = getMeterCoordsRaw(e);
       const width = placeMode === "door" ? DOOR_W : WIN_W;
       const hit = hitTestWalls(rooms.filter((r) => (r.floor ?? 0) === currentFloor), x, y, width, placeMode, sharedRanges, movingOpeningId);
@@ -507,10 +515,11 @@ export default function ArchitectStudio({ session }) {
     setSelectedOpening(null);
     setSelectedFurniture(null);
     setSelectedStair(null);
+    setSelectedId(null);
+    if (!canEdit) return;
     const { x, y } = getMeterCoordsForDraw(e);
     draggingRef.current = true;
     draftRef.current = { sx: x, sy: y, ex: x, ey: y };
-    setSelectedId(null);
   }
   function handlePointerMove(e) {
     if (polygonDrawMode) {
@@ -913,6 +922,14 @@ export default function ArchitectStudio({ session }) {
   useEffect(() => {
     let cancelled = false;
     async function loadInitial() {
+      // قبول أي دعوة معلّقة بإيميل المستخدم الحالي أولاً (RLS بتقيّد النتيجة لدعوات إيميله
+      // المؤكّد بس) — عشان أي مشروع انضمّ إله يظهر بقائمة مشاريعه بالاستعلام يلي بعده مباشرة
+      const { data: pending } = await supabase.from("project_members").select("id").is("user_id", null);
+      if (pending && pending.length > 0) {
+        await Promise.all(pending.map((m) => supabase.from("project_members").update({ user_id: user.id }).eq("id", m.id)));
+      }
+      if (cancelled) return;
+
       const { data: projects, error } = await supabase
         .from("projects")
         .select("*")
@@ -927,18 +944,21 @@ export default function ArchitectStudio({ session }) {
       const proj = projects && projects[0];
       if (proj) {
         try {
-          const [phasesData, roomsRes, stairsRes] = await Promise.all([
+          const [phasesData, roomsRes, stairsRes, membersRes] = await Promise.all([
             fetchPhasesForProject(proj.id),
             supabase.from("rooms").select("*, openings(*), furniture(*)").eq("project_id", proj.id),
             supabase.from("stairs").select("*").eq("project_id", proj.id),
+            supabase.from("project_members").select("*").eq("project_id", proj.id),
           ]);
           if (cancelled) return;
           if (roomsRes.error) throw roomsRes.error;
           if (stairsRes.error) throw stairsRes.error;
+          if (membersRes.error) throw membersRes.error;
           setProject(proj);
           setPhases(phasesData);
           setRooms(roomsRes.data || []);
           setStairsList(stairsRes.data || []);
+          setMembers(membersRes.data || []);
           setWallHeight(proj.wall_height);
           setWallColor(proj.wall_color);
           setWallMaterial(proj.wall_material);
@@ -1048,6 +1068,7 @@ export default function ArchitectStudio({ session }) {
     setPhases(phasesData);
     setRooms([]);
     setStairsList([]);
+    setMembers([]);
     setWallHeight(proj.wall_height);
     setWallColor(proj.wall_color);
     setWallMaterial(proj.wall_material);
@@ -1063,17 +1084,20 @@ export default function ArchitectStudio({ session }) {
     setInitializing(true);
     setSwitcherOpen(false);
     try {
-      const [phasesData, roomsRes, stairsRes] = await Promise.all([
+      const [phasesData, roomsRes, stairsRes, membersRes] = await Promise.all([
         fetchPhasesForProject(proj.id),
         supabase.from("rooms").select("*, openings(*), furniture(*)").eq("project_id", proj.id),
         supabase.from("stairs").select("*").eq("project_id", proj.id),
+        supabase.from("project_members").select("*").eq("project_id", proj.id),
       ]);
       if (roomsRes.error) throw roomsRes.error;
       if (stairsRes.error) throw stairsRes.error;
+      if (membersRes.error) throw membersRes.error;
       setProject(proj);
       setPhases(phasesData);
       setRooms(roomsRes.data || []);
       setStairsList(stairsRes.data || []);
+      setMembers(membersRes.data || []);
       setWallHeight(proj.wall_height);
       setWallColor(proj.wall_color);
       setWallMaterial(proj.wall_material);
@@ -1086,6 +1110,46 @@ export default function ArchitectStudio({ session }) {
     } finally {
       setInitializing(false);
     }
+  }
+
+  const { role: myRole, isOwner, canEdit } = useMemo(
+    () => computeMembership(project, members, user.id),
+    [project, members, user.id]
+  );
+
+  async function inviteMember(email, role) {
+    const { data, error } = await supabase
+      .from("project_members")
+      .insert({ project_id: project.id, invited_email: email.toLowerCase(), role })
+      .select()
+      .single();
+    if (error) { notifyError("دعوة عضو", error); return; }
+    setMembers((prev) => [...prev, data]);
+  }
+
+  async function removeMember(memberId) {
+    const { error } = await supabase.from("project_members").delete().eq("id", memberId);
+    if (error) { notifyError("إزالة عضو", error); return; }
+    setMembers((prev) => prev.filter((m) => m.id !== memberId));
+  }
+
+  async function changeMemberRole(memberId, role) {
+    const prev = members;
+    setMembers((cur) => cur.map((m) => (m.id === memberId ? { ...m, role } : m)));
+    const { error } = await supabase.from("project_members").update({ role }).eq("id", memberId);
+    if (error) { notifyError("تغيير دور العضو", error); setMembers(prev); }
+  }
+
+  // مغادرة المشروع (لأي عضو غير المالك) — بعد الحذف ما عاد للمستخدم وصول لهاد المشروع
+  // إطلاقاً، فبنرجعه لشاشة اختيار/إنشاء مشروع (project=null) متل ما بيصير أول تسجيل دخول
+  async function leaveProject() {
+    const membership = members.find((m) => m.user_id === user.id);
+    if (!membership) return;
+    const { error } = await supabase.from("project_members").delete().eq("id", membership.id);
+    if (error) { notifyError("مغادرة المشروع", error); return; }
+    setMembersOpen(false);
+    setProjectsList((prev) => prev.filter((p) => p.id !== project.id));
+    setProject(null);
   }
 
   function currentFloorWallHeight() {
@@ -1292,11 +1356,20 @@ export default function ArchitectStudio({ session }) {
           <button onClick={() => setStructuralOpen(true)} disabled={rooms.length === 0} title="تقدير إنشائي أولي بقواعد الإبهام السريعة (سماكة بلاطة/أبعاد كمرة تقريبية) — مو بديل عن مهندس إنشائي مرخّص" className="flex items-center gap-1.5 text-xs font-semibold text-slate-400 hover:text-slate-200 disabled:opacity-40 disabled:cursor-not-allowed px-2 py-1.5">
             <HardHat size={13} /> تقدير إنشائي
           </button>
+          <button onClick={() => setMembersOpen(true)} title="أعضاء المشروع — دعوة بصلاحيات محرّر/مُشاهد، بلا مزامنة حية" className="flex items-center gap-1.5 text-xs font-semibold text-slate-400 hover:text-slate-200 px-2 py-1.5">
+            <Users size={13} /> أعضاء المشروع
+          </button>
           <button onClick={signOut} title="تسجيل الخروج" className="flex items-center gap-1.5 text-xs font-semibold text-slate-400 hover:text-slate-200 px-2 py-1.5">
             <LogOut size={13} /> خروج
           </button>
         </div>
       </header>
+
+      {myRole === "viewer" && (
+        <div className="flex items-center gap-1.5 bg-amber-950/40 border-b border-amber-900 text-amber-300 text-[11px] px-5 py-1.5 shrink-0">
+          <Lock size={12} className="shrink-0" /> وضع العرض فقط — أنت مُشاهد بهاد المشروع، ما بتقدر تعدّل.
+        </div>
+      )}
 
       {view === "phases" && (
         <PhaseTracker
@@ -1823,6 +1896,19 @@ export default function ArchitectStudio({ session }) {
 
     {structuralOpen && (
       <StructuralPanel estimate={computeStructuralEstimate(rooms)} onClose={() => setStructuralOpen(false)} />
+    )}
+
+    {membersOpen && (
+      <MembersPanel
+        members={members}
+        isOwner={isOwner}
+        myUserId={user.id}
+        onInvite={inviteMember}
+        onRemove={removeMember}
+        onChangeRole={changeMemberRole}
+        onLeave={leaveProject}
+        onClose={() => setMembersOpen(false)}
+      />
     )}
     </>
   );
