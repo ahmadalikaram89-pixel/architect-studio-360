@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useRef, useState, useCallback } from "react"
 import {
   Layers, Trash2, RotateCw, PlayCircle, PauseCircle, Ruler, Sparkles, X, PencilRuler,
   FolderPlus, ChevronDown, ChevronUp, Plus,
-  Loader2, AlertTriangle, LogOut, AppWindow, DoorOpen, Printer, Folders, Move, Armchair, Undo2, Redo2, FileDown, Calculator, Box,
+  Loader2, AlertTriangle, LogOut, AppWindow, DoorOpen, Printer, Folders, Move, Armchair, Undo2, Redo2, FileDown, Calculator, Box, HardHat,
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 import { DOOR_W, WIN_W, computeSharedBoundaries, sharedWallRanges, FURNITURE_KINDS, stairFootprint, roomArea } from "../lib/build3d";
@@ -20,6 +20,8 @@ import { exportProjectToIfc } from "../lib/ifcExport";
 import { MATERIALS } from "../lib/materials";
 import { computeBoqItems } from "../lib/boq";
 import BoqPanel from "./BoqPanel";
+import { computeStructuralEstimate } from "../lib/structural";
+import StructuralPanel from "./StructuralPanel";
 import Viewport3D from "./Viewport3D";
 import ProjectSetup from "./ProjectSetup";
 import PhaseTracker from "./PhaseTracker";
@@ -94,6 +96,7 @@ export default function ArchitectStudio({ session }) {
   const [currentFloor, setCurrentFloor] = useState(0);
   const [printData, setPrintData] = useState(null);
   const [boqOpen, setBoqOpen] = useState(false);
+  const [structuralOpen, setStructuralOpen] = useState(false);
   const [confirmDeleteFloor, setConfirmDeleteFloor] = useState(false);
   const [snapEnabled, setSnapEnabled] = useState(true);
   const [showDimensions, setShowDimensions] = useState(false);
@@ -1286,6 +1289,9 @@ export default function ArchitectStudio({ session }) {
           <button onClick={() => setBoqOpen(true)} disabled={rooms.length === 0} title="جدول كميات تقديري (مساحات/جدران/أبواب/نوافذ) مع أسعار وحدة قابلة للتعديل" className="flex items-center gap-1.5 text-xs font-semibold text-slate-400 hover:text-slate-200 disabled:opacity-40 disabled:cursor-not-allowed px-2 py-1.5">
             <Calculator size={13} /> جدول الكميات
           </button>
+          <button onClick={() => setStructuralOpen(true)} disabled={rooms.length === 0} title="تقدير إنشائي أولي بقواعد الإبهام السريعة (سماكة بلاطة/أبعاد كمرة تقريبية) — مو بديل عن مهندس إنشائي مرخّص" className="flex items-center gap-1.5 text-xs font-semibold text-slate-400 hover:text-slate-200 disabled:opacity-40 disabled:cursor-not-allowed px-2 py-1.5">
+            <HardHat size={13} /> تقدير إنشائي
+          </button>
           <button onClick={signOut} title="تسجيل الخروج" className="flex items-center gap-1.5 text-xs font-semibold text-slate-400 hover:text-slate-200 px-2 py-1.5">
             <LogOut size={13} /> خروج
           </button>
@@ -1813,6 +1819,10 @@ export default function ArchitectStudio({ session }) {
 
     {boqOpen && (
       <BoqPanel items={computeBoqItems(rooms, stairsList)} projectName={project?.name} onClose={() => setBoqOpen(false)} />
+    )}
+
+    {structuralOpen && (
+      <StructuralPanel estimate={computeStructuralEstimate(rooms)} onClose={() => setStructuralOpen(false)} />
     )}
     </>
   );
