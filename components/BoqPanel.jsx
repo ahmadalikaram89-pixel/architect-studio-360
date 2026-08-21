@@ -50,9 +50,14 @@ export default function BoqPanel({ items, onClose, projectName }) {
         </div>
 
         <div className="p-4">
-          <p className="text-xs text-slate-500 mb-3 leading-relaxed">
+          <p className="text-xs text-slate-500 mb-2 leading-relaxed">
             كميات محسوبة تلقائياً من التصميم الحالي. عدّلي سعر الوحدة حسب سوقك المحلي — الإجمالي بيتحدث فوراً.
             هاد تقدير أولي بس لمساعدتك بالميزانية المبدئية، مو جدول كميات هندسي نهائي بديل عن مكتب حساب كميات.
+          </p>
+          <p className="text-[11px] text-amber-400/90 mb-3 leading-relaxed">
+            بنود الخرسانة والحديد مبنية على "التقدير الإنشائي الأولي" (قواعد إبهام، بلا حساب أحمال أو تسليح فعلي —
+            نفس تحذير السلامة هناك ينطبق هون بالكامل). حجم خرسانة الأعمدة وحديدها <strong>غير مضمّن</strong> لأنه
+            البرنامج ما بيحدد مواقع أعمدة فعلية.
           </p>
 
           <div className="overflow-x-auto">
