@@ -118,6 +118,20 @@ create table if not exists stairs (
   created_at timestamptz not null default now()
 );
 
+-- أعضاء فريق المشروع (تعاون بلا مزامنة حية) — الدعوة بالإيميل مباشرة، مو بالبحث عن مستخدم
+-- موجود (ما في وصول من العميل لجدول auth.users). user_id بيضل NULL لحد ما الشخص المدعو
+-- يسجّل دخول فعلاً بنفس الإيميل، وقتها "يطالب" (claim) بدعوته تلقائياً (سياسة RLS مخصصة
+-- تحت). المالك الأصلي (projects.user_id) مو صف هون — صلاحياته كاملة دايماً وبشكل ضمني
+create table if not exists project_members (
+  id uuid primary key default gen_random_uuid(),
+  project_id uuid not null references projects(id) on delete cascade,
+  invited_email text not null,
+  user_id uuid references auth.users(id) on delete cascade,
+  role text not null default 'editor' check (role in ('editor', 'viewer')),
+  created_at timestamptz not null default now(),
+  unique (project_id, invited_email)
+);
+
 -- فهارس لتسريع الاستعلامات الشائعة
 create index if not exists idx_phases_project on phases(project_id);
 create index if not exists idx_subtasks_phase on subtasks(phase_id);
@@ -125,6 +139,8 @@ create index if not exists idx_rooms_project on rooms(project_id);
 create index if not exists idx_openings_room on openings(room_id);
 create index if not exists idx_furniture_room on furniture(room_id);
 create index if not exists idx_stairs_project on stairs(project_id);
+create index if not exists idx_project_members_project on project_members(project_id);
+create index if not exists idx_project_members_user on project_members(user_id);
 
 -- ============================================================
 -- دالة تنشئ تلقائياً المراحل السبعة الافتراضية عند إنشاء مشروع جديد
@@ -267,9 +283,64 @@ create trigger trg_create_default_openings
   for each row execute function create_default_openings();
 
 -- ============================================================
--- تفعيل الأمان (RLS) — كل مستخدم يشوف ويعدّل مشاريعه فقط
--- (تسجيل الدخول عبر Supabase Auth بالإيميل وكلمة السر)
+-- تفعيل الأمان (RLS) — المالك (projects.user_id) كامل الصلاحية دايماً، وأعضاء الفريق
+-- (project_members) حسب دورهم: editor بيقدر يعدّل متل المالك (عدا حذف/إدارة الأعضاء)،
+-- viewer قراءة بس. دالتان مساعدتان (has_project_read_access/has_project_write_access)
+-- يعاد استخدامهم بكل سياسة بدل تكرار المنطق بكل جدول — نفس فلسفة إعادة الاستخدام
+-- بالمشروع كله (openingRowToShape، computeSharedBoundaries...)
 -- ============================================================
+create or replace function has_project_read_access(target_project_id uuid)
+returns boolean language sql security definer stable set search_path = public as $$
+  select exists (select 1 from projects p where p.id = target_project_id and p.user_id = auth.uid())
+      or exists (select 1 from project_members m where m.project_id = target_project_id and m.user_id = auth.uid());
+$$;
+
+create or replace function has_project_write_access(target_project_id uuid)
+returns boolean language sql security definer stable set search_path = public as $$
+  select exists (select 1 from projects p where p.id = target_project_id and p.user_id = auth.uid())
+      or exists (
+        select 1 from project_members m
+        where m.project_id = target_project_id and m.user_id = auth.uid() and m.role = 'editor'
+      );
+$$;
+
+create or replace function has_room_read_access(target_room_id uuid)
+returns boolean language sql security definer stable set search_path = public as $$
+  select has_project_read_access(project_id) from rooms where id = target_room_id;
+$$;
+
+create or replace function has_room_write_access(target_room_id uuid)
+returns boolean language sql security definer stable set search_path = public as $$
+  select has_project_write_access(project_id) from rooms where id = target_room_id;
+$$;
+
+create or replace function has_phase_read_access(target_phase_id uuid)
+returns boolean language sql security definer stable set search_path = public as $$
+  select has_project_read_access(project_id) from phases where id = target_phase_id;
+$$;
+
+create or replace function has_phase_write_access(target_phase_id uuid)
+returns boolean language sql security definer stable set search_path = public as $$
+  select has_project_write_access(project_id) from phases where id = target_phase_id;
+$$;
+
+-- الدوال هون security definer عشان يلفوا الـRLS بأمان لما يفحصوا جداول تانية (project_members
+-- من جوا سياسة projects مثلاً) بلا ما يعملوا recursion. بيصير المستخدم العادي (authenticated)
+-- يقدر يناديهن مباشرة عبر REST RPC بشكل افتراضي — هاد مقصود وآمن هون (بيرجعوا بوليان بس، ما
+-- في تسريب بيانات)، بس منسكر anon تماماً
+revoke execute on function has_project_read_access(uuid) from public, anon;
+revoke execute on function has_project_write_access(uuid) from public, anon;
+revoke execute on function has_room_read_access(uuid) from public, anon;
+revoke execute on function has_room_write_access(uuid) from public, anon;
+revoke execute on function has_phase_read_access(uuid) from public, anon;
+revoke execute on function has_phase_write_access(uuid) from public, anon;
+grant execute on function has_project_read_access(uuid) to authenticated;
+grant execute on function has_project_write_access(uuid) to authenticated;
+grant execute on function has_room_read_access(uuid) to authenticated;
+grant execute on function has_room_write_access(uuid) to authenticated;
+grant execute on function has_phase_read_access(uuid) to authenticated;
+grant execute on function has_phase_write_access(uuid) to authenticated;
+
 alter table projects enable row level security;
 alter table phases enable row level security;
 alter table subtasks enable row level security;
@@ -277,66 +348,84 @@ alter table rooms enable row level security;
 alter table openings enable row level security;
 alter table furniture enable row level security;
 alter table stairs enable row level security;
+alter table project_members enable row level security;
 
-create policy "own projects" on projects
-  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+drop policy if exists "own projects" on projects;
+create policy "projects select" on projects for select using (has_project_read_access(id));
+create policy "projects insert" on projects for insert with check (auth.uid() = user_id);
+create policy "projects update" on projects for update using (has_project_write_access(id)) with check (has_project_write_access(id));
+create policy "projects delete" on projects for delete using (auth.uid() = user_id); -- حذف المشروع كامل: المالك بس، حتى الـ editor ما بيقدر
 
-create policy "own phases" on phases
-  for all using (
-    exists (select 1 from projects p where p.id = phases.project_id and p.user_id = auth.uid())
-  ) with check (
-    exists (select 1 from projects p where p.id = phases.project_id and p.user_id = auth.uid())
+drop policy if exists "own phases" on phases;
+create policy "phases select" on phases for select using (has_project_read_access(project_id));
+create policy "phases insert" on phases for insert with check (has_project_write_access(project_id));
+create policy "phases update" on phases for update using (has_project_write_access(project_id)) with check (has_project_write_access(project_id));
+create policy "phases delete" on phases for delete using (has_project_write_access(project_id));
+
+drop policy if exists "own subtasks" on subtasks;
+create policy "subtasks select" on subtasks for select using (has_phase_read_access(phase_id));
+create policy "subtasks insert" on subtasks for insert with check (has_phase_write_access(phase_id));
+create policy "subtasks update" on subtasks for update using (has_phase_write_access(phase_id)) with check (has_phase_write_access(phase_id));
+create policy "subtasks delete" on subtasks for delete using (has_phase_write_access(phase_id));
+
+drop policy if exists "own rooms" on rooms;
+create policy "rooms select" on rooms for select using (has_project_read_access(project_id));
+create policy "rooms insert" on rooms for insert with check (has_project_write_access(project_id));
+create policy "rooms update" on rooms for update using (has_project_write_access(project_id)) with check (has_project_write_access(project_id));
+create policy "rooms delete" on rooms for delete using (has_project_write_access(project_id));
+
+drop policy if exists "own openings" on openings;
+create policy "openings select" on openings for select using (has_room_read_access(room_id));
+create policy "openings insert" on openings for insert with check (has_room_write_access(room_id));
+create policy "openings update" on openings for update using (has_room_write_access(room_id)) with check (has_room_write_access(room_id));
+create policy "openings delete" on openings for delete using (has_room_write_access(room_id));
+
+drop policy if exists "own furniture" on furniture;
+create policy "furniture select" on furniture for select using (has_room_read_access(room_id));
+create policy "furniture insert" on furniture for insert with check (has_room_write_access(room_id));
+create policy "furniture update" on furniture for update using (has_room_write_access(room_id)) with check (has_room_write_access(room_id));
+create policy "furniture delete" on furniture for delete using (has_room_write_access(room_id));
+
+drop policy if exists "own stairs" on stairs;
+create policy "stairs select" on stairs for select using (has_project_read_access(project_id));
+create policy "stairs insert" on stairs for insert with check (has_project_write_access(project_id));
+create policy "stairs update" on stairs for update using (has_project_write_access(project_id)) with check (has_project_write_access(project_id));
+create policy "stairs delete" on stairs for delete using (has_project_write_access(project_id));
+
+-- أعضاء المشروع: أي حدا إله وصول قراءة للمشروع بيشوف قائمة الأعضاء، بس المالك بس يقدر
+-- يدعو/يعدّل دور/يحذف عضو — عدا حالة خاصة: العضو نفسه يقدر يحذف صفه (مغادرة المشروع)،
+-- وأي مستخدم مسجّل دخول يقدر "يطالب" (claim) بدعوة موجّهة لإيميله بالظبط (تحديث user_id
+-- بس، وبس لما يكون NULL أصلاً ولإيميله المؤكّد من التوكن، مو إيميل يختاره هو)
+create policy "members select" on project_members
+  for select using (has_project_read_access(project_id));
+
+-- لازم صف عضوية الشخص يضل مرئي إله دايماً (دعوة معلّقة بإيميله، أو عضويته بعد ما يطالب فيها)
+-- بمقارنة عمود بالصف نفسه مباشرة، مو subquery على project_members متل has_project_read_access
+-- — لو اعتمدنا عالدالة بس، تحديث "claim" (اللي بيحوّل user_id من NULL لقيمة فعلية) بيفشل
+-- بخطأ RLS: أوامر UPDATE بلازم يضل الصف الجديد مرئي بنهاية نفس الأمر عبر سياسة SELECT،
+-- ودالة has_project_read_access بتستعلم project_members من جديد وما بتشوف تعديل نفس
+-- الصف يلي لسا نفس الأمر شغال عليه (مشكلة Halloween الكلاسيكية) — المقارنة المباشرة هون
+-- بتتفحص القيم الفعلية للصف الجديد مباشرة بدون استعلام، فبتشتغل صح
+create policy "members select own membership row" on project_members
+  for select using (
+    user_id = auth.uid()
+    or (user_id is null and lower(invited_email) = lower(auth.jwt() ->> 'email'))
   );
 
-create policy "own subtasks" on subtasks
-  for all using (
-    exists (
-      select 1 from phases ph join projects p on p.id = ph.project_id
-      where ph.id = subtasks.phase_id and p.user_id = auth.uid()
-    )
-  ) with check (
-    exists (
-      select 1 from phases ph join projects p on p.id = ph.project_id
-      where ph.id = subtasks.phase_id and p.user_id = auth.uid()
-    )
-  );
+create policy "members insert by owner" on project_members
+  for insert with check (exists (select 1 from projects p where p.id = project_id and p.user_id = auth.uid()));
 
-create policy "own rooms" on rooms
-  for all using (
-    exists (select 1 from projects p where p.id = rooms.project_id and p.user_id = auth.uid())
-  ) with check (
-    exists (select 1 from projects p where p.id = rooms.project_id and p.user_id = auth.uid())
-  );
+create policy "members update by owner" on project_members
+  for update using (exists (select 1 from projects p where p.id = project_id and p.user_id = auth.uid()))
+  with check (exists (select 1 from projects p where p.id = project_id and p.user_id = auth.uid()));
 
-create policy "own openings" on openings
-  for all using (
-    exists (
-      select 1 from rooms r join projects p on p.id = r.project_id
-      where r.id = openings.room_id and p.user_id = auth.uid()
-    )
-  ) with check (
-    exists (
-      select 1 from rooms r join projects p on p.id = r.project_id
-      where r.id = openings.room_id and p.user_id = auth.uid()
-    )
-  );
+create policy "members claim own invite" on project_members
+  for update
+  using (user_id is null and lower(invited_email) = lower(auth.jwt() ->> 'email'))
+  with check (user_id = auth.uid() and lower(invited_email) = lower(auth.jwt() ->> 'email'));
 
-create policy "own furniture" on furniture
-  for all using (
-    exists (
-      select 1 from rooms r join projects p on p.id = r.project_id
-      where r.id = furniture.room_id and p.user_id = auth.uid()
-    )
-  ) with check (
-    exists (
-      select 1 from rooms r join projects p on p.id = r.project_id
-      where r.id = furniture.room_id and p.user_id = auth.uid()
-    )
-  );
-
-create policy "own stairs" on stairs
-  for all using (
-    exists (select 1 from projects p where p.id = stairs.project_id and p.user_id = auth.uid())
-  ) with check (
-    exists (select 1 from projects p where p.id = stairs.project_id and p.user_id = auth.uid())
+create policy "members delete by owner or self" on project_members
+  for delete using (
+    user_id = auth.uid()
+    or exists (select 1 from projects p where p.id = project_id and p.user_id = auth.uid())
   );
