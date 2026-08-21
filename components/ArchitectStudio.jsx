@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useRef, useState, useCallback } from "react"
 import {
   Layers, Trash2, RotateCw, PlayCircle, PauseCircle, Ruler, Sparkles, X, PencilRuler,
   FolderPlus, ChevronDown, ChevronUp, Plus,
-  Loader2, AlertTriangle, LogOut, AppWindow, DoorOpen, Printer, Folders, Move, Armchair, Undo2, Redo2,
+  Loader2, AlertTriangle, LogOut, AppWindow, DoorOpen, Printer, Folders, Move, Armchair, Undo2, Redo2, FileDown,
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 import { DOOR_W, WIN_W, computeSharedBoundaries, sharedWallRanges, FURNITURE_KINDS, stairFootprint, roomArea } from "../lib/build3d";
@@ -15,6 +15,7 @@ import {
   floorToFloorHeight, stairEffectiveFootprint, hitTestStairs, hitTestGridForStair,
   drawFloorPlanImage, toolbarPlacement,
 } from "../lib/planGeometry";
+import { exportFloorsToDxf } from "../lib/dxfExport";
 import Viewport3D from "./Viewport3D";
 import ProjectSetup from "./ProjectSetup";
 import PhaseTracker from "./PhaseTracker";
@@ -963,19 +964,33 @@ export default function ArchitectStudio({ session }) {
     if (printData) window.print();
   }, [printData]);
 
+  function computeFloorsMeta() {
+    const floorNums = [...new Set(rooms.map((r) => r.floor ?? 0))].sort((a, b) => a - b);
+    return (floorNums.length ? floorNums : [0]).map((f) => ({
+      floorNum: f,
+      label: floorLabel(f),
+      rooms: rooms.filter((r) => (r.floor ?? 0) === f),
+    }));
+  }
+
   function handlePrint() {
     if (!project) return;
-    const floorNums = [...new Set(rooms.map((r) => r.floor ?? 0))].sort((a, b) => a - b);
-    const floors = (floorNums.length ? floorNums : [0]).map((f) => {
-      const floorRoomsList = rooms.filter((r) => (r.floor ?? 0) === f);
-      return {
-        floorNum: f,
-        label: floorLabel(f),
-        imageDataUrl: drawFloorPlanImage(floorRoomsList, gridW, gridH),
-        rooms: floorRoomsList,
-      };
-    });
+    const floors = computeFloorsMeta().map((f) => ({ ...f, imageDataUrl: drawFloorPlanImage(f.rooms, gridW, gridH) }));
     setPrintData({ floors });
+  }
+
+  function handleExportDxf() {
+    if (!project) return;
+    const dxfString = exportFloorsToDxf(rooms, computeFloorsMeta(), stairsList, wallHeight, showDimensions);
+    const blob = new Blob([dxfString], { type: "application/dxf" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${project.name || "مخطط"}.dxf`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   }
 
   async function signOut() {
@@ -1209,6 +1224,9 @@ export default function ArchitectStudio({ session }) {
           )}
           <button onClick={handlePrint} title="طباعة المخطط / حفظ PDF" className="flex items-center gap-1.5 text-xs font-semibold text-slate-400 hover:text-slate-200 px-2 py-1.5">
             <Printer size={13} /> طباعة / PDF
+          </button>
+          <button onClick={handleExportDxf} disabled={rooms.length === 0} title="تصدير المخطط بصيغة DXF (متوافقة مباشرة مع AutoCAD)" className="flex items-center gap-1.5 text-xs font-semibold text-slate-400 hover:text-slate-200 disabled:opacity-40 disabled:cursor-not-allowed px-2 py-1.5">
+            <FileDown size={13} /> تصدير DXF
           </button>
           <button onClick={signOut} title="تسجيل الخروج" className="flex items-center gap-1.5 text-xs font-semibold text-slate-400 hover:text-slate-200 px-2 py-1.5">
             <LogOut size={13} /> خروج
