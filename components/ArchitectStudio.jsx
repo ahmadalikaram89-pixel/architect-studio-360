@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useRef, useState, useCallback } from "react"
 import {
   Layers, Trash2, RotateCw, PlayCircle, PauseCircle, Ruler, Sparkles, X, PencilRuler,
   FolderPlus, ChevronDown, ChevronUp, Plus,
-  Loader2, AlertTriangle, LogOut, AppWindow, DoorOpen, Printer, Folders, Move, Armchair, Undo2, Redo2, FileDown,
+  Loader2, AlertTriangle, LogOut, AppWindow, DoorOpen, Printer, Folders, Move, Armchair, Undo2, Redo2, FileDown, Calculator,
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 import { DOOR_W, WIN_W, computeSharedBoundaries, sharedWallRanges, FURNITURE_KINDS, stairFootprint, roomArea } from "../lib/build3d";
@@ -17,6 +17,8 @@ import {
 } from "../lib/planGeometry";
 import { exportFloorsToDxf } from "../lib/dxfExport";
 import { MATERIALS } from "../lib/materials";
+import { computeBoqItems } from "../lib/boq";
+import BoqPanel from "./BoqPanel";
 import Viewport3D from "./Viewport3D";
 import ProjectSetup from "./ProjectSetup";
 import PhaseTracker from "./PhaseTracker";
@@ -90,6 +92,7 @@ export default function ArchitectStudio({ session }) {
   const [movingStairId, setMovingStairId] = useState(null);
   const [currentFloor, setCurrentFloor] = useState(0);
   const [printData, setPrintData] = useState(null);
+  const [boqOpen, setBoqOpen] = useState(false);
   const [confirmDeleteFloor, setConfirmDeleteFloor] = useState(false);
   const [snapEnabled, setSnapEnabled] = useState(true);
   const [showDimensions, setShowDimensions] = useState(false);
@@ -1262,6 +1265,9 @@ export default function ArchitectStudio({ session }) {
           <button onClick={handleExportDxf} disabled={rooms.length === 0} title="تصدير المخطط بصيغة DXF (متوافقة مباشرة مع AutoCAD)" className="flex items-center gap-1.5 text-xs font-semibold text-slate-400 hover:text-slate-200 disabled:opacity-40 disabled:cursor-not-allowed px-2 py-1.5">
             <FileDown size={13} /> تصدير DXF
           </button>
+          <button onClick={() => setBoqOpen(true)} disabled={rooms.length === 0} title="جدول كميات تقديري (مساحات/جدران/أبواب/نوافذ) مع أسعار وحدة قابلة للتعديل" className="flex items-center gap-1.5 text-xs font-semibold text-slate-400 hover:text-slate-200 disabled:opacity-40 disabled:cursor-not-allowed px-2 py-1.5">
+            <Calculator size={13} /> جدول الكميات
+          </button>
           <button onClick={signOut} title="تسجيل الخروج" className="flex items-center gap-1.5 text-xs font-semibold text-slate-400 hover:text-slate-200 px-2 py-1.5">
             <LogOut size={13} /> خروج
           </button>
@@ -1786,6 +1792,10 @@ export default function ArchitectStudio({ session }) {
         </div>
       )}
     </div>
+
+    {boqOpen && (
+      <BoqPanel items={computeBoqItems(rooms, stairsList)} projectName={project?.name} onClose={() => setBoqOpen(false)} />
+    )}
     </>
   );
 }
