@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Users, X, UserPlus, Trash2, LogOut, Eye, Pencil, Crown } from "lucide-react";
 
-const ROLE_LABEL = { editor: "محرّر", viewer: "مُشاهد" };
+export const ROLE_LABEL = { editor: "محرّر", viewer: "مُشاهد" };
 
 // لوحة "أعضاء المشروع" — دعوة/إدارة أعضاء بصلاحيات، بلا مزامنة حية (التغييرات تظهر عند
 // إعادة تحميل/دخول الطرف التاني، مو فوراً). المالك بس يدعو/يبدّل دور/يحذف عضو؛ أي عضو
