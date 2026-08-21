@@ -64,7 +64,7 @@ create table if not exists rooms (
   color text not null default '#C7714E',
   floor integer not null default 0,   -- 0 = الطابق الأرضي، 1 = الأول...
   has_roof boolean not null default true,   -- بلا سطح = شرفة/تراس مكشوف؛ true بس تحافظ على شكل الغرف القديمة، الغرف الجديدة تنضاف بـ false (يدوي)
-  roof_type text not null default 'flat' check (roof_type in ('flat', 'gable')),   -- نوع السطح لو has_roof مفعّل؛ gable بس للغرف المستطيلة (بلا points) والطابق الأعلى بلا طابق فوقه
+  roof_type text not null default 'flat' check (roof_type in ('flat', 'gable', 'hip')),   -- نوع السطح لو has_roof مفعّل؛ gable/hip بس للغرف المستطيلة (بلا points) والطابق الأعلى بلا طابق فوقه
   wall_height numeric,   -- NULL = ورّث ارتفاع المشروع (projects.wall_height) — تخصيص لكل طابق
   wall_color text,       -- NULL = ورّث لون المشروع (projects.wall_color) — تخصيص لكل طابق
   wall_material text check (wall_material in ('plaster', 'brick', 'tile', 'wood', 'marble', 'concrete')),    -- NULL = ورّث مادة المشروع (projects.wall_material) — تخصيص لكل طابق، نفس نمط wall_color
