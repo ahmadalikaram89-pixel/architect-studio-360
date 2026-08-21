@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useRef, useState, useCallback } from "react"
 import {
   Layers, Trash2, RotateCw, PlayCircle, PauseCircle, Ruler, Sparkles, X, PencilRuler,
   FolderPlus, ChevronDown, ChevronUp, Plus,
-  Loader2, AlertTriangle, LogOut, AppWindow, DoorOpen, Printer, Folders, Move, Armchair, Undo2, Redo2, FileDown, Calculator,
+  Loader2, AlertTriangle, LogOut, AppWindow, DoorOpen, Printer, Folders, Move, Armchair, Undo2, Redo2, FileDown, Calculator, Box,
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 import { DOOR_W, WIN_W, computeSharedBoundaries, sharedWallRanges, FURNITURE_KINDS, stairFootprint, roomArea } from "../lib/build3d";
@@ -16,6 +16,7 @@ import {
   drawFloorPlanImage, toolbarPlacement,
 } from "../lib/planGeometry";
 import { exportFloorsToDxf } from "../lib/dxfExport";
+import { exportProjectToIfc } from "../lib/ifcExport";
 import { MATERIALS } from "../lib/materials";
 import { computeBoqItems } from "../lib/boq";
 import BoqPanel from "./BoqPanel";
@@ -1002,6 +1003,20 @@ export default function ArchitectStudio({ session }) {
     URL.revokeObjectURL(url);
   }
 
+  function handleExportIfc() {
+    if (!project) return;
+    const ifcString = exportProjectToIfc(project, rooms, stairsList);
+    const blob = new Blob([ifcString], { type: "application/x-step" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${project.name || "مخطط"}.ifc`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
   async function signOut() {
     const { error } = await supabase.auth.signOut();
     if (error) notifyError("تسجيل الخروج", error);
@@ -1264,6 +1279,9 @@ export default function ArchitectStudio({ session }) {
           </button>
           <button onClick={handleExportDxf} disabled={rooms.length === 0} title="تصدير المخطط بصيغة DXF (متوافقة مباشرة مع AutoCAD)" className="flex items-center gap-1.5 text-xs font-semibold text-slate-400 hover:text-slate-200 disabled:opacity-40 disabled:cursor-not-allowed px-2 py-1.5">
             <FileDown size={13} /> تصدير DXF
+          </button>
+          <button onClick={handleExportIfc} disabled={rooms.length === 0} title="تصدير نموذج BIM بصيغة IFC4 (تقدير أولي — جدران/أرضيات/أسطح/أبواب/نوافذ/سلالم بهندسة ثلاثية الأبعاد حقيقية)" className="flex items-center gap-1.5 text-xs font-semibold text-slate-400 hover:text-slate-200 disabled:opacity-40 disabled:cursor-not-allowed px-2 py-1.5">
+            <Box size={13} /> تصدير IFC
           </button>
           <button onClick={() => setBoqOpen(true)} disabled={rooms.length === 0} title="جدول كميات تقديري (مساحات/جدران/أبواب/نوافذ) مع أسعار وحدة قابلة للتعديل" className="flex items-center gap-1.5 text-xs font-semibold text-slate-400 hover:text-slate-200 disabled:opacity-40 disabled:cursor-not-allowed px-2 py-1.5">
             <Calculator size={13} /> جدول الكميات
