@@ -413,7 +413,7 @@ function drawFloorPlanImage(floorRoomsList, gridW, gridH) {
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   for (let x = 0; x <= gridW; x++) {
-    ctx.strokeStyle = x % 5 === 0 ? "#CBD5E1" : "#EEF2F7";
+    ctx.strokeStyle = x % 5 === 0 ? "#C7C7CC" : "#EDEDF0";
     ctx.lineWidth = x % 5 === 0 ? 1.2 : 1;
     ctx.beginPath();
     ctx.moveTo(x * PPM + 0.5, 0);
@@ -421,7 +421,7 @@ function drawFloorPlanImage(floorRoomsList, gridW, gridH) {
     ctx.stroke();
   }
   for (let y = 0; y <= gridH; y++) {
-    ctx.strokeStyle = y % 5 === 0 ? "#CBD5E1" : "#EEF2F7";
+    ctx.strokeStyle = y % 5 === 0 ? "#C7C7CC" : "#EDEDF0";
     ctx.lineWidth = y % 5 === 0 ? 1.2 : 1;
     ctx.beginPath();
     ctx.moveTo(0, y * PPM + 0.5);
@@ -444,10 +444,10 @@ function drawFloorPlanImage(floorRoomsList, gridW, gridH) {
       ctx.strokeStyle = r.color;
       ctx.lineWidth = 2;
       ctx.stroke();
-      ctx.fillStyle = "#1E293B";
+      ctx.fillStyle = "#1A1A1D";
       ctx.font = "700 13px Tajawal, sans-serif";
       ctx.fillText(r.name, x + 8, y + 20);
-      ctx.fillStyle = "#64748B";
+      ctx.fillStyle = "#68686E";
       ctx.font = "11px 'IBM Plex Mono', monospace";
       ctx.fillText(`${roomArea(r).toFixed(1)} m²`, x + 8, y + 36);
     } else {
@@ -456,13 +456,13 @@ function drawFloorPlanImage(floorRoomsList, gridW, gridH) {
       ctx.strokeStyle = r.color;
       ctx.lineWidth = 2;
       ctx.strokeRect(x, y, rw, rh);
-      ctx.fillStyle = "#1E293B";
+      ctx.fillStyle = "#1A1A1D";
       ctx.font = "700 13px Tajawal, sans-serif";
       ctx.fillText(r.name, x + 8, y + 20);
-      ctx.fillStyle = "#64748B";
+      ctx.fillStyle = "#68686E";
       ctx.font = "11px 'IBM Plex Mono', monospace";
       ctx.fillText(`${r.gw.toFixed(1)} × ${r.gh.toFixed(1)} m`, x + 8, y + 36);
-      drawRoomDimensions(ctx, r, { line: "#94A3B8", text: "#334155" });
+      drawRoomDimensions(ctx, r, { line: "#B45309", text: "#92400E" });
     }
 
     (r.openings || []).forEach((o) => {
@@ -485,7 +485,7 @@ function drawFloorPlanImage(floorRoomsList, gridW, gridH) {
       ctx.strokeStyle = "#A9895C";
       ctx.lineWidth = 1.5;
       ctx.strokeRect(fx, fy, w * PPM, fd * PPM);
-      ctx.fillStyle = "#1E293B";
+      ctx.fillStyle = "#1A1A1D";
       ctx.font = "10px Tajawal, sans-serif";
       ctx.textAlign = "center";
       ctx.fillText(FURNITURE_KINDS[f.kind]?.label || "", fx + (w * PPM) / 2, fy + (fd * PPM) / 2 + 3);
@@ -539,8 +539,8 @@ function Viewport3D({ rooms, stairs, wallHeight, wallColor, autoRotate }) {
   useEffect(() => {
     const mount = mountRef.current;
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x0a0f1c);
-    scene.fog = new THREE.Fog(0x0a0f1c, 22, 60);
+    scene.background = new THREE.Color(0x0a0a0b);
+    scene.fog = new THREE.Fog(0x0a0a0b, 22, 60);
 
     const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 200);
     const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -559,14 +559,14 @@ function Viewport3D({ rooms, stairs, wallHeight, wallColor, autoRotate }) {
 
     const ground = new THREE.Mesh(
       new THREE.PlaneGeometry(300, 300),
-      new THREE.MeshStandardMaterial({ color: 0x101828, roughness: 1 })
+      new THREE.MeshStandardMaterial({ color: 0x18181b, roughness: 1 })
     );
     ground.rotation.x = -Math.PI / 2;
     ground.position.y = -0.03;
     ground.receiveShadow = true;
     scene.add(ground);
 
-    const grid = new THREE.GridHelper(300, 150, 0x2c4568, 0x16223a);
+    const grid = new THREE.GridHelper(300, 150, 0x3f3f46, 0x27272a);
     grid.position.y = -0.02;
     scene.add(grid);
 
@@ -1163,11 +1163,11 @@ export default function ArchitectStudio({ session }) {
     const ctx = canvas.getContext("2d");
     const w = canvas.width, h = canvas.height;
     ctx.clearRect(0, 0, w, h);
-    ctx.fillStyle = "#0A0F1C";
+    ctx.fillStyle = "#0A0A0B";
     ctx.fillRect(0, 0, w, h);
 
     for (let x = 0; x <= gridW; x++) {
-      ctx.strokeStyle = x % 5 === 0 ? "#2C4568" : "#16223A";
+      ctx.strokeStyle = x % 5 === 0 ? "#3A3A40" : "#1C1C20";
       ctx.lineWidth = x % 5 === 0 ? 1.2 : 1;
       ctx.beginPath();
       ctx.moveTo(x * PPM + 0.5, 0);
@@ -1175,7 +1175,7 @@ export default function ArchitectStudio({ session }) {
       ctx.stroke();
     }
     for (let y = 0; y <= gridH; y++) {
-      ctx.strokeStyle = y % 5 === 0 ? "#2C4568" : "#16223A";
+      ctx.strokeStyle = y % 5 === 0 ? "#3A3A40" : "#1C1C20";
       ctx.lineWidth = y % 5 === 0 ? 1.2 : 1;
       ctx.beginPath();
       ctx.moveTo(0, y * PPM + 0.5);
@@ -1200,10 +1200,10 @@ export default function ArchitectStudio({ session }) {
         ctx.strokeStyle = r.id === selectedId ? "#22D3EE" : r.color;
         ctx.lineWidth = r.id === selectedId ? 3 : 2;
         ctx.stroke();
-        ctx.fillStyle = "#EAF0F8";
+        ctx.fillStyle = "#F2F2F4";
         ctx.font = "700 13px Tajawal, sans-serif";
         ctx.fillText(r.name, x + 8, y + 20);
-        ctx.fillStyle = "#8DA0BC";
+        ctx.fillStyle = "#9A9AA2";
         ctx.font = "11px 'IBM Plex Mono', monospace";
         ctx.fillText(`${roomArea(r).toFixed(1)} م²`, x + 8, y + 36);
       } else {
@@ -1212,13 +1212,13 @@ export default function ArchitectStudio({ session }) {
         ctx.strokeStyle = r.id === selectedId ? "#22D3EE" : r.color;
         ctx.lineWidth = r.id === selectedId ? 3 : 2;
         ctx.strokeRect(x, y, rw, rh);
-        ctx.fillStyle = "#EAF0F8";
+        ctx.fillStyle = "#F2F2F4";
         ctx.font = "700 13px Tajawal, sans-serif";
         ctx.fillText(r.name, x + 8, y + 20);
-        ctx.fillStyle = "#8DA0BC";
+        ctx.fillStyle = "#9A9AA2";
         ctx.font = "11px 'IBM Plex Mono', monospace";
         ctx.fillText(`${r.gw.toFixed(1)} × ${r.gh.toFixed(1)} m`, x + 8, y + 36);
-        if (showDimensions) drawRoomDimensions(ctx, r, { line: "#5B7A9E", text: "#9FB4D1" });
+        if (showDimensions) drawRoomDimensions(ctx, r, { line: "#C99A3E", text: "#E8B84B" });
       }
 
       (r.openings || []).forEach((o) => {
@@ -1242,7 +1242,7 @@ export default function ArchitectStudio({ session }) {
         ctx.strokeStyle = isSel ? "#22D3EE" : "#A9895C";
         ctx.lineWidth = isSel ? 2 : 1.5;
         ctx.strokeRect(fx, fy, w * PPM, fd * PPM);
-        ctx.fillStyle = "#EAF0F8";
+        ctx.fillStyle = "#F2F2F4";
         ctx.font = "10px Tajawal, sans-serif";
         ctx.textAlign = "center";
         ctx.fillText(FURNITURE_KINDS[f.kind]?.label || "", fx + (w * PPM) / 2, fy + (fd * PPM) / 2 + 3);
@@ -1257,13 +1257,13 @@ export default function ArchitectStudio({ session }) {
       const { w: fw, d: fd } = stairEffectiveFootprint(h, rotation);
       const sx = (s.x - fw / 2) * PPM, sy = (s.y - fd / 2) * PPM;
       const isSel = selectedStair?.id === s.id;
-      ctx.fillStyle = isSel ? "#22D3EE55" : "#8DA0BC44";
+      ctx.fillStyle = isSel ? "#22D3EE55" : "#9A9AA244";
       ctx.fillRect(sx, sy, fw * PPM, fd * PPM);
-      ctx.strokeStyle = isSel ? "#22D3EE" : "#8DA0BC";
+      ctx.strokeStyle = isSel ? "#22D3EE" : "#9A9AA2";
       ctx.lineWidth = isSel ? 2 : 1.5;
       ctx.strokeRect(sx, sy, fw * PPM, fd * PPM);
-      drawStairSymbol(ctx, sx, sy, fw, fd, rotation, numSteps, isSel ? "#22D3EE" : "#8DA0BC");
-      ctx.fillStyle = "#EAF0F8";
+      drawStairSymbol(ctx, sx, sy, fw, fd, rotation, numSteps, isSel ? "#22D3EE" : "#9A9AA2");
+      ctx.fillStyle = "#F2F2F4";
       ctx.font = "10px Tajawal, sans-serif";
       ctx.textAlign = "center";
       ctx.fillText("سلم", sx + (fw * PPM) / 2, sy + (fd * PPM) / 2 + 3);
@@ -2480,10 +2480,10 @@ export default function ArchitectStudio({ session }) {
 
     <div id="print-sheet">
       {printData && (
-        <div dir="rtl" style={{ fontFamily: "'Tajawal', sans-serif", color: "#0f172a" }}>
+        <div dir="rtl" style={{ fontFamily: "'Tajawal', sans-serif", color: "#1A1A1D" }}>
           <div style={{ marginBottom: 16 }}>
             <h1 style={{ fontSize: 20, fontWeight: 800, margin: 0 }}>{project.name}</h1>
-            <p style={{ fontSize: 12, color: "#475569", margin: "4px 0 0" }}>
+            <p style={{ fontSize: 12, color: "#68686E", margin: "4px 0 0" }}>
               {project.client && `العميل: ${project.client} · `}{project.land_type} · {project.city || "—"} · {project.width}×{project.depth} م
             </p>
           </div>
@@ -2493,7 +2493,7 @@ export default function ArchitectStudio({ session }) {
               <img src={f.imageDataUrl} alt={f.label} style={{ maxWidth: "100%", border: "1px solid #E2E8F0" }} />
               <table style={{ width: "100%", marginTop: 10, borderCollapse: "collapse", fontSize: 12 }}>
                 <thead>
-                  <tr style={{ borderBottom: "1px solid #CBD5E1", textAlign: "right" }}>
+                  <tr style={{ borderBottom: "1px solid #C7C7CC", textAlign: "right" }}>
                     <th style={{ padding: "4px 6px" }}>الغرفة</th>
                     <th style={{ padding: "4px 6px" }}>الأبعاد</th>
                     <th style={{ padding: "4px 6px" }}>المساحة</th>
@@ -2501,14 +2501,14 @@ export default function ArchitectStudio({ session }) {
                 </thead>
                 <tbody>
                   {f.rooms.map((r) => (
-                    <tr key={r.id} style={{ borderBottom: "1px solid #F1F5F9" }}>
+                    <tr key={r.id} style={{ borderBottom: "1px solid #EDEDF0" }}>
                       <td style={{ padding: "4px 6px" }}>{r.name}</td>
                       <td style={{ padding: "4px 6px" }}>{r.points ? "شكل حر" : `${r.gw.toFixed(1)} × ${r.gh.toFixed(1)} م`}</td>
                       <td style={{ padding: "4px 6px" }}>{roomArea(r).toFixed(1)} م²</td>
                     </tr>
                   ))}
                   {f.rooms.length === 0 && (
-                    <tr><td colSpan={3} style={{ padding: "4px 6px", color: "#94A3B8" }}>لا توجد غرف بهاد الطابق.</td></tr>
+                    <tr><td colSpan={3} style={{ padding: "4px 6px", color: "#8E8E96" }}>لا توجد غرف بهاد الطابق.</td></tr>
                   )}
                 </tbody>
               </table>
