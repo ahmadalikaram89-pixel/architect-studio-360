@@ -6,7 +6,7 @@ import {
   Layers, Trash2, RotateCcw, RotateCw, PlayCircle, PauseCircle, Ruler, Sparkles, X,
   MapPin, PencilRuler, Building2, FileCheck2, HardHat, ClipboardCheck, KeyRound,
   CheckCircle2, Circle, Clock3, ChevronLeft, FolderPlus, ChevronDown, ChevronUp, Plus, CalendarDays, UserRound,
-  Loader2, AlertTriangle, LogOut, AppWindow, DoorOpen, Printer, Folders, Move, Armchair,
+  Loader2, AlertTriangle, LogOut, AppWindow, DoorOpen, Printer, Folders, Move, Armchair, Undo2, Redo2,
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 import { computeCenter, rebuildGroup, DOOR_W, WIN_W, computeSharedBoundaries, sharedWallRanges, FURNITURE_KINDS, computeFloorBaseYMap, stairFootprint, roomArea } from "../lib/build3d";
@@ -1154,6 +1154,118 @@ export default function ArchitectStudio({ session }) {
   const polygonDraftRef = useRef([]); // نقاط الشكل الحر المتراكمة أثناء الرسم (بالمتر)
   const polygonHoverRef = useRef(null); // موضع الفأرة الحالي — لرسم الخط "المطاطي" لآخر نقطة
 
+  // ====== سجل التراجع/الإعادة (Undo/Redo) ======
+  // لقطة = نسخة كاملة من rooms (بأبوابها/نوافذها/أثاثها المتداخل) + قائمة السلالم لحظة معيّنة.
+  // pushHistory() بتُستدعى بأول سطر بكل دالة تعديل تصميم (قبل أي setState)، فبتلتقط الحالة
+  // "قبل" التعديل. التراجع/الإعادة بيرجعوا اللقطة محلياً فوراً، وبالتوازي بيحسبوا الفرق
+  // (إدراج/تحديث/حذف) بين الحالة الحالية واللقطة المستهدفة ويطبّقوه على قاعدة البيانات —
+  // نفس جداول وأعمدة العمليات العادية تماماً، بلا مسار خاص.
+  const HISTORY_LIMIT = 50;
+  const historyRef = useRef({ past: [], future: [] });
+  const [historyVersion, setHistoryVersion] = useState(0);
+  const wallHeightDragActiveRef = useRef(false); // بوابة pushHistory وحيدة لبداية سحب شريط الارتفاع (المعاينة بتتكرر كتير أثناء السحب)
+
+  useEffect(() => {
+    historyRef.current = { past: [], future: [] };
+    setHistoryVersion((v) => v + 1);
+  }, [project?.id]);
+
+  function takeSnapshot() {
+    return {
+      rooms: rooms.map((r) => ({ ...r, openings: (r.openings || []).map((o) => ({ ...o })), furniture: (r.furniture || []).map((f) => ({ ...f })) })),
+      stairs: stairsList.map((s) => ({ ...s })),
+    };
+  }
+
+  function pushHistory() {
+    const h = historyRef.current;
+    h.past.push(takeSnapshot());
+    if (h.past.length > HISTORY_LIMIT) h.past.shift();
+    h.future = [];
+    setHistoryVersion((v) => v + 1);
+  }
+
+  async function syncRows(table, before, after) {
+    const beforeMap = new Map(before.map((x) => [x.id, x]));
+    const afterMap = new Map(after.map((x) => [x.id, x]));
+    const ops = [];
+    for (const b of before) if (!afterMap.has(b.id)) ops.push(supabase.from(table).delete().eq("id", b.id));
+    for (const a of after) {
+      const b = beforeMap.get(a.id);
+      if (!b) ops.push(supabase.from(table).insert(a));
+      else if (JSON.stringify(b) !== JSON.stringify(a)) ops.push(supabase.from(table).update(a).eq("id", a.id));
+    }
+    const results = await Promise.all(ops);
+    results.forEach(({ error }) => { if (error) console.error(`history sync ${table} failed`, error); });
+  }
+
+  async function restoreSnapshot(before, target) {
+    setRooms(target.rooms);
+    setStairsList(target.stairs);
+    setSelectedId(null);
+    setSelectedOpening(null);
+    setSelectedFurniture(null);
+    setSelectedStair(null);
+    setPlaceMode(null);
+
+    const strip = (r) => { const { openings, furniture, ...rest } = r; return rest; };
+    const beforeRoomMap = new Map(before.rooms.map((r) => [r.id, r]));
+    const targetRoomMap = new Map(target.rooms.map((r) => [r.id, r]));
+    const roomOps = [];
+    for (const r of before.rooms) if (!targetRoomMap.has(r.id)) roomOps.push(supabase.from("rooms").delete().eq("id", r.id));
+    for (const r of target.rooms) {
+      const b = beforeRoomMap.get(r.id);
+      const aRow = strip(r);
+      if (!b) roomOps.push(supabase.from("rooms").insert(aRow));
+      else if (JSON.stringify(strip(b)) !== JSON.stringify(aRow)) roomOps.push(supabase.from("rooms").update(aRow).eq("id", r.id));
+    }
+    const roomResults = await Promise.all(roomOps);
+    roomResults.forEach(({ error }) => { if (error) console.error("history sync rooms failed", error); });
+
+    // بعد ما صارت صفوف الغرف مطابقة (الغرف المُعادة-إدراجها موجودة فعلياً)، منزامن أبواب/نوافذ/أثاث كل غرفة
+    for (const r of target.rooms) {
+      const b = beforeRoomMap.get(r.id);
+      await syncRows("openings", b?.openings || [], r.openings || []);
+      await syncRows("furniture", b?.furniture || [], r.furniture || []);
+    }
+    await syncRows("stairs", before.stairs, target.stairs);
+  }
+
+  async function undo() {
+    const h = historyRef.current;
+    if (h.past.length === 0) return;
+    const current = takeSnapshot();
+    const target = h.past.pop();
+    h.future.push(current);
+    if (h.future.length > HISTORY_LIMIT) h.future.shift();
+    setHistoryVersion((v) => v + 1);
+    await restoreSnapshot(current, target);
+  }
+
+  async function redo() {
+    const h = historyRef.current;
+    if (h.future.length === 0) return;
+    const current = takeSnapshot();
+    const target = h.future.pop();
+    h.past.push(current);
+    if (h.past.length > HISTORY_LIMIT) h.past.shift();
+    setHistoryVersion((v) => v + 1);
+    await restoreSnapshot(current, target);
+  }
+
+  useEffect(() => {
+    function onKeyDown(e) {
+      const tag = document.activeElement?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "z") return;
+      e.preventDefault();
+      if (e.shiftKey) redo();
+      else undo();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  });
+
   const gridW = project ? clamp(project.width, 6, 60) : 20;
   const gridH = project ? clamp(project.depth, 6, 60) : 15;
 
@@ -1471,6 +1583,7 @@ export default function ArchitectStudio({ session }) {
     const gx = Math.min(d.sx, d.ex), gy = Math.min(d.sy, d.ey);
     const gw = Math.abs(d.ex - d.sx), gh = Math.abs(d.ey - d.sy);
     if (gw >= 1 && gh >= 1) {
+      pushHistory();
       const floorRoomsNow = rooms.filter((r) => (r.floor ?? 0) === currentFloor);
       const { data, error } = await supabase
         .from("rooms")
@@ -1494,6 +1607,7 @@ export default function ArchitectStudio({ session }) {
   async function finishPolygonDraw() {
     const pts = polygonDraftRef.current;
     if (pts.length < 3 || !project) return;
+    pushHistory();
     const xs = pts.map((p) => p.x), ys = pts.map((p) => p.y);
     const gx = Math.min(...xs), gy = Math.min(...ys);
     const gw = Math.max(0.1, Math.max(...xs) - gx);
@@ -1536,12 +1650,14 @@ export default function ArchitectStudio({ session }) {
   }
 
   async function updateRoomBounds(id, patch) {
+    pushHistory();
     setRooms((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
     const { error } = await supabase.from("rooms").update(patch).eq("id", id);
     if (error) console.error("update room bounds failed", error);
   }
 
   async function placeOpening(hit, kind) {
+    pushHistory();
     const { roomId, position, wall, edgeIndex } = hit;
     // إما جدار مستطيل مسمّى (wall) أو ضلع شكل حر (edge_index) — نفس قيد قاعدة البيانات
     const wallFields = edgeIndex != null ? { wall: null, edge_index: edgeIndex } : { wall, edge_index: null };
@@ -1579,6 +1695,7 @@ export default function ArchitectStudio({ session }) {
   }
 
   async function deleteOpening(opening) {
+    pushHistory();
     setRooms((prev) => prev.map((r) => (r.id === opening.roomId ? { ...r, openings: (r.openings || []).filter((o) => o.id !== opening.id) } : r)));
     setSelectedOpening(null);
     const { error } = await supabase.from("openings").delete().eq("id", opening.id);
@@ -1592,6 +1709,7 @@ export default function ArchitectStudio({ session }) {
   }
 
   async function placeFurniture(roomId, kind, x, y) {
+    pushHistory();
     if (movingFurnitureId) {
       const furnitureId = movingFurnitureId;
       const { data, error } = await supabase
@@ -1625,6 +1743,7 @@ export default function ArchitectStudio({ session }) {
   }
 
   async function deleteFurniture(item) {
+    pushHistory();
     setRooms((prev) => prev.map((r) => (r.id === item.roomId ? { ...r, furniture: (r.furniture || []).filter((f) => f.id !== item.id) } : r)));
     setSelectedFurniture(null);
     const { error } = await supabase.from("furniture").delete().eq("id", item.id);
@@ -1638,6 +1757,7 @@ export default function ArchitectStudio({ session }) {
   }
 
   async function rotateFurniture(item) {
+    pushHistory();
     const nextRotation = (item.rotation + 90) % 360;
     setRooms((prev) => prev.map((r) => (r.id === item.roomId ? { ...r, furniture: (r.furniture || []).map((f) => (f.id === item.id ? { ...f, rotation: nextRotation } : f)) } : r)));
     setSelectedFurniture((s) => (s && s.id === item.id ? { ...s, rotation: nextRotation } : s));
@@ -1647,6 +1767,7 @@ export default function ArchitectStudio({ session }) {
 
   async function placeStair(floor, x, y) {
     if (!project) return;
+    pushHistory();
     if (movingStairId) {
       const stairId = movingStairId;
       const { data, error } = await supabase
@@ -1676,6 +1797,7 @@ export default function ArchitectStudio({ session }) {
   }
 
   async function deleteStair(stair) {
+    pushHistory();
     setStairsList((prev) => prev.filter((s) => s.id !== stair.id));
     setSelectedStair(null);
     const { error } = await supabase.from("stairs").delete().eq("id", stair.id);
@@ -1689,6 +1811,7 @@ export default function ArchitectStudio({ session }) {
   }
 
   async function rotateStair(stair) {
+    pushHistory();
     const nextRotation = (stair.rotation + 90) % 360;
     setStairsList((prev) => prev.map((s) => (s.id === stair.id ? { ...s, rotation: nextRotation } : s)));
     setSelectedStair((s) => (s && s.id === stair.id ? { ...s, rotation: nextRotation } : s));
@@ -1697,12 +1820,14 @@ export default function ArchitectStudio({ session }) {
   }
 
   async function renameRoom(id, name) {
+    pushHistory();
     setRooms((prev) => prev.map((r) => (r.id === id ? { ...r, name } : r)));
     const { error } = await supabase.from("rooms").update({ name }).eq("id", id);
     if (error) console.error("rename room failed", error);
   }
 
   async function deleteRoom(id) {
+    pushHistory();
     setRooms((prev) => prev.filter((r) => r.id !== id));
     if (selectedId === id) setSelectedId(null);
     const { error } = await supabase.from("rooms").delete().eq("id", id);
@@ -1712,6 +1837,7 @@ export default function ArchitectStudio({ session }) {
   async function toggleRoomRoof(id) {
     const room = rooms.find((r) => r.id === id);
     if (!room) return;
+    pushHistory();
     const hasRoof = !room.has_roof;
     setRooms((prev) => prev.map((r) => (r.id === id ? { ...r, has_roof: hasRoof } : r)));
     const { error } = await supabase.from("rooms").update({ has_roof: hasRoof }).eq("id", id);
@@ -1720,6 +1846,7 @@ export default function ArchitectStudio({ session }) {
 
   async function clearRooms() {
     if (!project) return;
+    pushHistory();
     setRooms((prev) => prev.filter((r) => (r.floor ?? 0) !== currentFloor));
     setSelectedId(null);
     const { error } = await supabase.from("rooms").delete().eq("project_id", project.id).eq("floor", currentFloor);
@@ -1728,6 +1855,7 @@ export default function ArchitectStudio({ session }) {
 
   async function deleteFloor() {
     if (!project || currentFloor === 0) return;
+    pushHistory();
     const floorToDelete = currentFloor;
     setRooms((prev) => prev.filter((r) => (r.floor ?? 0) !== floorToDelete));
     setConfirmDeleteFloor(false);
@@ -1740,6 +1868,7 @@ export default function ArchitectStudio({ session }) {
 
   async function swapFloors(fromFloor, toFloor) {
     if (!project || toFloor < 0 || toFloor > FLOOR_CAP || toFloor === fromFloor) return;
+    pushHistory();
 
     let res = await supabase.from("rooms").update({ floor: FLOOR_SWAP_SENTINEL }).eq("project_id", project.id).eq("floor", fromFloor);
     if (res.error) { console.error("swap floor step1 failed", res.error); return; }
@@ -1765,6 +1894,7 @@ export default function ArchitectStudio({ session }) {
 
   async function loadSample() {
     if (!project) return;
+    pushHistory();
     const floorRoomsNow = rooms.filter((r) => (r.floor ?? 0) === currentFloor);
     const inheritedHeight = floorRoomsNow[0]?.wall_height ?? null;
     const inheritedColor = floorRoomsNow[0]?.wall_color ?? null;
@@ -1938,10 +2068,15 @@ export default function ArchitectStudio({ session }) {
 
   // معاينة حية أثناء سحب شريط الارتفاع — تحديث محلي بس، بلا كتابة لقاعدة البيانات
   function previewFloorWallHeight(value) {
+    if (!wallHeightDragActiveRef.current) {
+      wallHeightDragActiveRef.current = true;
+      pushHistory();
+    }
     setRooms((prev) => prev.map((r) => ((r.floor ?? 0) === currentFloor ? { ...r, wall_height: value } : r)));
   }
 
   async function commitFloorWallHeight(value) {
+    wallHeightDragActiveRef.current = false;
     if (!project || floorRooms.length === 0) return;
     const { error } = await supabase.from("rooms").update({ wall_height: value }).eq("project_id", project.id).eq("floor", currentFloor);
     if (error) console.error("update floor wall height failed", error);
@@ -1949,6 +2084,7 @@ export default function ArchitectStudio({ session }) {
 
   async function setFloorWallColor(hex) {
     if (!project || floorRooms.length === 0) return;
+    pushHistory();
     setRooms((prev) => prev.map((r) => ((r.floor ?? 0) === currentFloor ? { ...r, wall_color: hex } : r)));
     const { error } = await supabase.from("rooms").update({ wall_color: hex }).eq("project_id", project.id).eq("floor", currentFloor);
     if (error) console.error("update floor wall color failed", error);
@@ -2059,6 +2195,18 @@ export default function ArchitectStudio({ session }) {
             <button onClick={() => setConfirmReset(true)} className="flex items-center gap-1.5 text-xs font-semibold text-slate-400 hover:text-slate-200 px-2 py-1.5">
               <FolderPlus size={13} /> مشروع جديد
             </button>
+          )}
+          {(view === "plan" || view === "3d") && (
+            <div className="flex items-center gap-0.5 ml-1">
+              <button onClick={undo} disabled={historyRef.current.past.length === 0} title="تراجع (Ctrl+Z)"
+                className="flex items-center justify-center text-slate-400 hover:text-slate-200 disabled:opacity-30 disabled:cursor-not-allowed p-1.5 rounded-md hover:bg-slate-800">
+                <Undo2 size={15} />
+              </button>
+              <button onClick={redo} disabled={historyRef.current.future.length === 0} title="إعادة (Ctrl+Shift+Z)"
+                className="flex items-center justify-center text-slate-400 hover:text-slate-200 disabled:opacity-30 disabled:cursor-not-allowed p-1.5 rounded-md hover:bg-slate-800">
+                <Redo2 size={15} />
+              </button>
+            </div>
           )}
           <button onClick={handlePrint} title="طباعة المخطط / حفظ PDF" className="flex items-center gap-1.5 text-xs font-semibold text-slate-400 hover:text-slate-200 px-2 py-1.5">
             <Printer size={13} /> طباعة / PDF
