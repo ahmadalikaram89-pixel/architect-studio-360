@@ -88,7 +88,14 @@ create table if not exists openings (
 create table if not exists furniture (
   id uuid primary key default gen_random_uuid(),
   room_id uuid not null references rooms(id) on delete cascade,
-  kind text not null check (kind in ('bed', 'sofa', 'table', 'wardrobe', 'sink')),
+  kind text not null check (kind in (
+    'bed', 'wardrobe', 'nightstand',
+    'sofa', 'armchair', 'tv_unit', 'dining_table',
+    'table', 'chair',
+    'toilet', 'bathtub', 'shower', 'sink',
+    'kitchen_counter', 'stove', 'fridge',
+    'desk', 'bookshelf'
+  )),
   x numeric not null,
   y numeric not null,
   rotation integer not null default 0 check (rotation in (0, 90, 180, 270)),
