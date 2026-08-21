@@ -1562,7 +1562,7 @@ export default function ArchitectStudio({ session }) {
                       {room.has_roof && !room.points && (
                         <div className="mt-3">
                           <p className="text-[11px] text-slate-500 mb-1.5">نوع السطح</p>
-                          <div className="grid grid-cols-2 gap-2">
+                          <div className="grid grid-cols-3 gap-2">
                             <button onClick={() => setRoomRoofType(room.id, "flat")}
                               className={`text-xs font-semibold rounded-md py-1.5 transition-colors ${(room.roof_type ?? "flat") === "flat" ? "bg-cyan-500 text-slate-950" : "bg-slate-800 hover:bg-slate-700 border border-slate-700"}`}>
                               مسطح
@@ -1571,12 +1571,16 @@ export default function ArchitectStudio({ session }) {
                               className={`text-xs font-semibold rounded-md py-1.5 transition-colors ${room.roof_type === "gable" ? "bg-cyan-500 text-slate-950" : "bg-slate-800 hover:bg-slate-700 border border-slate-700"}`}>
                               جملوني
                             </button>
+                            <button onClick={() => setRoomRoofType(room.id, "hip")}
+                              className={`text-xs font-semibold rounded-md py-1.5 transition-colors ${room.roof_type === "hip" ? "bg-cyan-500 text-slate-950" : "bg-slate-800 hover:bg-slate-700 border border-slate-700"}`}>
+                              أربعة ميول
+                            </button>
                           </div>
                         </div>
                       )}
                       {room.has_roof && room.points && (
                         <p className="text-[11px] text-slate-600 mt-2 leading-relaxed">
-                          السطح الجملوني غير متاح للغرف حرة الشكل — سطح مسطح بس بالإصدار الحالي.
+                          السطح الجملوني وأربعة الميول غير متاحين للغرف حرة الشكل — سطح مسطح بس بالإصدار الحالي.
                         </p>
                       )}
                     </>
