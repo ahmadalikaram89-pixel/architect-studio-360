@@ -37,6 +37,15 @@ const WALL_COLORS = [
 
 const ROOM_TYPES = ["غرفة نوم", "صالة", "جلوس", "مضافة", "مطبخ", "حمام", "مدخل", "موزع", "تواليت", "شرفة"];
 
+// تجميع كتالوج الأثاث حسب category (نفس ترتيب أول ظهور بـ FURNITURE_KINDS) — لعرضه مبوّب
+// بواجهة الاختيار بدل قائمة مسطحة، أنسب لكتالوج بحجم عشرات القطع
+const FURNITURE_GROUPS = Object.entries(FURNITURE_KINDS).reduce((groups, [kind, meta]) => {
+  let g = groups.find((x) => x.category === meta.category);
+  if (!g) { g = { category: meta.category, items: [] }; groups.push(g); }
+  g.items.push([kind, meta]);
+  return groups;
+}, []);
+
 // ---------------- التطبيق الرئيسي ----------------
 export default function ArchitectStudio({ session }) {
   const user = session.user;
@@ -801,6 +810,13 @@ export default function ArchitectStudio({ session }) {
     if (error) notifyError("تبديل سطح الغرفة", error);
   }
 
+  async function setRoomRoofType(id, roofType) {
+    pushHistory();
+    setRooms((prev) => prev.map((r) => (r.id === id ? { ...r, roof_type: roofType } : r)));
+    const { error } = await supabase.from("rooms").update({ roof_type: roofType }).eq("id", id);
+    if (error) notifyError("تبديل نوع السطح", error);
+  }
+
   async function clearRooms() {
     if (!project) return;
     pushHistory();
@@ -1351,16 +1367,23 @@ export default function ArchitectStudio({ session }) {
             {view === "plan" && (
               <div>
                 <p className="text-xs font-semibold text-slate-400 mb-2 flex items-center gap-1.5"><Armchair size={13}/> الأثاث</p>
-                <div className="grid grid-cols-3 gap-2">
-                  {Object.entries(FURNITURE_KINDS).map(([kind, meta]) => (
-                    <button
-                      key={kind}
-                      disabled={floorRooms.length === 0}
-                      onClick={() => { setSelectedOpening(null); setSelectedFurniture(null); setMovingFurnitureId(null); setPlaceMode((m) => (m === `furniture:${kind}` ? null : `furniture:${kind}`)); }}
-                      className={`flex items-center justify-center text-center text-[10px] font-semibold rounded-md py-2 px-1 border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${placeMode === `furniture:${kind}` ? "bg-cyan-500 text-slate-950 border-cyan-500" : "bg-slate-800 hover:bg-slate-700 border-slate-700"}`}
-                    >
-                      {meta.label}
-                    </button>
+                <div className="space-y-3">
+                  {FURNITURE_GROUPS.map((g) => (
+                    <div key={g.category}>
+                      <p className="text-[10px] font-semibold text-slate-500 mb-1.5">{g.category}</p>
+                      <div className="grid grid-cols-3 gap-2">
+                        {g.items.map(([kind, meta]) => (
+                          <button
+                            key={kind}
+                            disabled={floorRooms.length === 0}
+                            onClick={() => { setSelectedOpening(null); setSelectedFurniture(null); setMovingFurnitureId(null); setPlaceMode((m) => (m === `furniture:${kind}` ? null : `furniture:${kind}`)); }}
+                            className={`flex items-center justify-center text-center text-[10px] font-semibold rounded-md py-2 px-1 border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${placeMode === `furniture:${kind}` ? "bg-cyan-500 text-slate-950 border-cyan-500" : "bg-slate-800 hover:bg-slate-700 border-slate-700"}`}
+                          >
+                            {meta.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                   ))}
                 </div>
                 {placeMode?.startsWith("furniture:") && (
@@ -1470,6 +1493,26 @@ export default function ArchitectStudio({ session }) {
                       <p className="text-[11px] text-slate-500 mt-2 leading-relaxed">
                         الغرفة بلا سطح تظهر مكشوفة من فوق — مناسبة لشرفة أو تراس.
                       </p>
+                      {room.has_roof && !room.points && (
+                        <div className="mt-3">
+                          <p className="text-[11px] text-slate-500 mb-1.5">نوع السطح</p>
+                          <div className="grid grid-cols-2 gap-2">
+                            <button onClick={() => setRoomRoofType(room.id, "flat")}
+                              className={`text-xs font-semibold rounded-md py-1.5 transition-colors ${(room.roof_type ?? "flat") === "flat" ? "bg-cyan-500 text-slate-950" : "bg-slate-800 hover:bg-slate-700 border border-slate-700"}`}>
+                              مسطح
+                            </button>
+                            <button onClick={() => setRoomRoofType(room.id, "gable")}
+                              className={`text-xs font-semibold rounded-md py-1.5 transition-colors ${room.roof_type === "gable" ? "bg-cyan-500 text-slate-950" : "bg-slate-800 hover:bg-slate-700 border border-slate-700"}`}>
+                              جملوني
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                      {room.has_roof && room.points && (
+                        <p className="text-[11px] text-slate-600 mt-2 leading-relaxed">
+                          السطح الجملوني غير متاح للغرف حرة الشكل — سطح مسطح بس بالإصدار الحالي.
+                        </p>
+                      )}
                     </>
                   );
                 })()}
