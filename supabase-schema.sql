@@ -18,6 +18,7 @@ create table if not exists projects (
   depth numeric not null default 15,
   wall_height numeric not null default 2.7,
   wall_color text not null default '#EDE7DC',
+  wall_material text not null default 'plaster' check (wall_material in ('plaster', 'brick', 'tile', 'wood', 'marble', 'concrete')),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -66,6 +67,8 @@ create table if not exists rooms (
   roof_type text not null default 'flat' check (roof_type in ('flat', 'gable')),   -- نوع السطح لو has_roof مفعّل؛ gable بس للغرف المستطيلة (بلا points) والطابق الأعلى بلا طابق فوقه
   wall_height numeric,   -- NULL = ورّث ارتفاع المشروع (projects.wall_height) — تخصيص لكل طابق
   wall_color text,       -- NULL = ورّث لون المشروع (projects.wall_color) — تخصيص لكل طابق
+  wall_material text check (wall_material in ('plaster', 'brick', 'tile', 'wood', 'marble', 'concrete')),    -- NULL = ورّث مادة المشروع (projects.wall_material) — تخصيص لكل طابق، نفس نمط wall_color
+  floor_material text not null default 'plaster' check (floor_material in ('plaster', 'brick', 'tile', 'wood', 'marble', 'concrete')),  -- مادة أرضية هاد الغرفة بالذات (بعكس wall_material، مو موروثة من مشروع/طابق)
   points jsonb,          -- [{x,y},...] بالمتر لغرفة بشكل حر (جدران مايلة)؛ NULL = مستطيل عادي (gx/gy/gw/gh)
   created_at timestamptz not null default now()
 );

@@ -6,7 +6,7 @@ import { RotateCcw } from "lucide-react";
 import { computeCenter, rebuildGroup } from "../lib/build3d";
 import { clamp } from "../lib/planGeometry";
 
-export default function Viewport3D({ rooms, stairs, wallHeight, wallColor, autoRotate }) {
+export default function Viewport3D({ rooms, stairs, wallHeight, wallColor, wallMaterial, autoRotate }) {
   const mountRef = useRef(null);
   const stateRef = useRef({});
   const flagsRef = useRef({ autoRotate });
@@ -154,7 +154,7 @@ export default function Viewport3D({ rooms, stairs, wallHeight, wallColor, autoR
   useEffect(() => {
     const s = stateRef.current;
     if (!s.group) return;
-    rebuildGroup(s.group, rooms, stairs, wallHeight, wallColor, s.center, s.animState, textureCacheRef.current);
+    rebuildGroup(s.group, rooms, stairs, wallHeight, wallColor, s.center, s.animState, textureCacheRef.current, wallMaterial);
 
     if (s.dirLight) {
       const radius = s.defaultRadius;
@@ -169,7 +169,7 @@ export default function Viewport3D({ rooms, stairs, wallHeight, wallColor, autoR
       cam.far = radius * 3 + maxWallHeight * 2;
       cam.updateProjectionMatrix();
     }
-  }, [rooms, stairs, wallHeight, wallColor]);
+  }, [rooms, stairs, wallHeight, wallColor, wallMaterial]);
 
   useEffect(() => {
     if (resetKey === 0) return;

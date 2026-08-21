@@ -16,6 +16,7 @@ import {
   drawFloorPlanImage, toolbarPlacement,
 } from "../lib/planGeometry";
 import { exportFloorsToDxf } from "../lib/dxfExport";
+import { MATERIALS } from "../lib/materials";
 import Viewport3D from "./Viewport3D";
 import ProjectSetup from "./ProjectSetup";
 import PhaseTracker from "./PhaseTracker";
@@ -77,6 +78,7 @@ export default function ArchitectStudio({ session }) {
   const [wallHeight, setWallHeight] = useState(2.7);
   const [roomColor, setRoomColor] = useState(ROOM_COLORS[0].hex);
   const [wallColor, setWallColor] = useState(WALL_COLORS[0].hex);
+  const [wallMaterial, setWallMaterial] = useState("plaster");
   const [autoRotate, setAutoRotate] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
   const [placeMode, setPlaceMode] = useState(null); // null | 'door' | 'window' | 'furniture:<kind>'
@@ -558,6 +560,7 @@ export default function ArchitectStudio({ session }) {
           project_id: project.id, name: ROOM_TYPES[0], gx, gy, gw, gh, color: roomColor, floor: currentFloor, has_roof: false,
           wall_height: floorRoomsNow[0]?.wall_height ?? null,
           wall_color: floorRoomsNow[0]?.wall_color ?? null,
+          wall_material: floorRoomsNow[0]?.wall_material ?? null,
         })
         .select("*, openings(*), furniture(*)")
         .single();
@@ -590,6 +593,7 @@ export default function ArchitectStudio({ session }) {
         has_roof: false, points: pts,
         wall_height: floorRoomsNow[0]?.wall_height ?? null,
         wall_color: floorRoomsNow[0]?.wall_color ?? null,
+        wall_material: floorRoomsNow[0]?.wall_material ?? null,
       })
       .select("*, openings(*), furniture(*)")
       .single();
@@ -872,11 +876,12 @@ export default function ArchitectStudio({ session }) {
     const floorRoomsNow = rooms.filter((r) => (r.floor ?? 0) === currentFloor);
     const inheritedHeight = floorRoomsNow[0]?.wall_height ?? null;
     const inheritedColor = floorRoomsNow[0]?.wall_color ?? null;
+    const inheritedMaterial = floorRoomsNow[0]?.wall_material ?? null;
     const sample = [
-      { project_id: project.id, name: "صالة", gx: 1, gy: 1, gw: 6, gh: 5, color: ROOM_COLORS[0].hex, floor: currentFloor, has_roof: false, wall_height: inheritedHeight, wall_color: inheritedColor },
-      { project_id: project.id, name: "مطبخ", gx: 7.5, gy: 1, gw: 4, gh: 5, color: ROOM_COLORS[1].hex, floor: currentFloor, has_roof: false, wall_height: inheritedHeight, wall_color: inheritedColor },
-      { project_id: project.id, name: "غرفة نوم", gx: 1, gy: 6.5, gw: 5, gh: 4, color: ROOM_COLORS[2].hex, floor: currentFloor, has_roof: false, wall_height: inheritedHeight, wall_color: inheritedColor },
-      { project_id: project.id, name: "حمام", gx: 6.5, gy: 6.5, gw: 3, gh: 4, color: ROOM_COLORS[3].hex, floor: currentFloor, has_roof: false, wall_height: inheritedHeight, wall_color: inheritedColor },
+      { project_id: project.id, name: "صالة", gx: 1, gy: 1, gw: 6, gh: 5, color: ROOM_COLORS[0].hex, floor: currentFloor, has_roof: false, wall_height: inheritedHeight, wall_color: inheritedColor, wall_material: inheritedMaterial },
+      { project_id: project.id, name: "مطبخ", gx: 7.5, gy: 1, gw: 4, gh: 5, color: ROOM_COLORS[1].hex, floor: currentFloor, has_roof: false, wall_height: inheritedHeight, wall_color: inheritedColor, wall_material: inheritedMaterial },
+      { project_id: project.id, name: "غرفة نوم", gx: 1, gy: 6.5, gw: 5, gh: 4, color: ROOM_COLORS[2].hex, floor: currentFloor, has_roof: false, wall_height: inheritedHeight, wall_color: inheritedColor, wall_material: inheritedMaterial },
+      { project_id: project.id, name: "حمام", gx: 6.5, gy: 6.5, gw: 3, gh: 4, color: ROOM_COLORS[3].hex, floor: currentFloor, has_roof: false, wall_height: inheritedHeight, wall_color: inheritedColor, wall_material: inheritedMaterial },
     ];
     await supabase.from("rooms").delete().eq("project_id", project.id).eq("floor", currentFloor);
     const { data, error } = await supabase.from("rooms").insert(sample).select("*, openings(*), furniture(*)");
@@ -929,6 +934,7 @@ export default function ArchitectStudio({ session }) {
           setStairsList(stairsRes.data || []);
           setWallHeight(proj.wall_height);
           setWallColor(proj.wall_color);
+          setWallMaterial(proj.wall_material);
         } catch (err) {
           if (!cancelled) setLoadError(err.message || "تعذر تحميل بيانات المشروع");
         }
@@ -1023,6 +1029,7 @@ export default function ArchitectStudio({ session }) {
     setStairsList([]);
     setWallHeight(proj.wall_height);
     setWallColor(proj.wall_color);
+    setWallMaterial(proj.wall_material);
     setSelectedId(null);
     setCurrentFloor(0);
     setView("phases");
@@ -1048,6 +1055,7 @@ export default function ArchitectStudio({ session }) {
       setStairsList(stairsRes.data || []);
       setWallHeight(proj.wall_height);
       setWallColor(proj.wall_color);
+      setWallMaterial(proj.wall_material);
       setSelectedId(null);
       setCurrentFloor(0);
       setConfirmReset(false);
@@ -1066,6 +1074,10 @@ export default function ArchitectStudio({ session }) {
   function currentFloorWallColor() {
     const room = rooms.find((r) => (r.floor ?? 0) === currentFloor);
     return room?.wall_color ?? wallColor;
+  }
+  function currentFloorWallMaterial() {
+    const room = rooms.find((r) => (r.floor ?? 0) === currentFloor);
+    return room?.wall_material ?? wallMaterial;
   }
 
   // معاينة حية أثناء سحب شريط الارتفاع — تحديث محلي بس، بلا كتابة لقاعدة البيانات
@@ -1090,6 +1102,28 @@ export default function ArchitectStudio({ session }) {
     setRooms((prev) => prev.map((r) => ((r.floor ?? 0) === currentFloor ? { ...r, wall_color: hex } : r)));
     const { error } = await supabase.from("rooms").update({ wall_color: hex }).eq("project_id", project.id).eq("floor", currentFloor);
     if (error) notifyError("تحديث لون الجدران", error);
+  }
+
+  async function setFloorWallMaterial(material) {
+    if (!project || floorRooms.length === 0) return;
+    pushHistory();
+    setRooms((prev) => prev.map((r) => ((r.floor ?? 0) === currentFloor ? { ...r, wall_material: material } : r)));
+    const { error } = await supabase.from("rooms").update({ wall_material: material }).eq("project_id", project.id).eq("floor", currentFloor);
+    if (error) notifyError("تحديث مادة الجدران", error);
+  }
+
+  async function updateRoomColor(id, hex) {
+    pushHistory();
+    setRooms((prev) => prev.map((r) => (r.id === id ? { ...r, color: hex } : r)));
+    const { error } = await supabase.from("rooms").update({ color: hex }).eq("id", id);
+    if (error) notifyError("تحديث لون أرضية الغرفة", error);
+  }
+
+  async function setRoomFloorMaterial(id, material) {
+    pushHistory();
+    setRooms((prev) => prev.map((r) => (r.id === id ? { ...r, floor_material: material } : r)));
+    const { error } = await supabase.from("rooms").update({ floor_material: material }).eq("id", id);
+    if (error) notifyError("تحديث مادة الأرضية", error);
   }
 
   function startOver() {
@@ -1463,6 +1497,20 @@ export default function ArchitectStudio({ session }) {
 
             {view === "plan" && (
               <div>
+                <p className="text-xs font-semibold text-slate-400 mb-2">مادة جدران {floorLabel(currentFloor)}</p>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {Object.entries(MATERIALS).map(([key, m]) => (
+                    <button key={key} disabled={floorRooms.length === 0} onClick={() => setFloorWallMaterial(key)}
+                      className={`text-[10px] font-semibold rounded-md py-1.5 px-1 border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${currentFloorWallMaterial() === key ? "bg-cyan-500 text-slate-950 border-cyan-500" : "bg-slate-800 hover:bg-slate-700 border-slate-700"}`}>
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {view === "plan" && (
+              <div>
                 <p className="text-xs font-semibold text-slate-400 mb-2 flex items-center gap-1.5"><Ruler size={13}/> ارتفاع جدران {floorLabel(currentFloor)}</p>
                 <input
                   type="range" min="2" max="4.5" step="0.1"
@@ -1536,6 +1584,30 @@ export default function ArchitectStudio({ session }) {
                 })()}
               </div>
             )}
+
+            {view === "3d" && (() => {
+              const room = rooms.find((r) => r.id === selectedId);
+              if (!room) return null;
+              return (
+                <div>
+                  <p className="text-xs font-semibold text-slate-400 mb-2">أرضية الغرفة المحددة</p>
+                  <div className="flex flex-wrap gap-2 mb-2.5">
+                    {ROOM_COLORS.map((c) => (
+                      <button key={c.hex} title={c.name} onClick={() => updateRoomColor(room.id, c.hex)} style={{ backgroundColor: c.hex }}
+                        className={`w-7 h-7 rounded-full border-2 transition-transform ${room.color === c.hex ? "border-cyan-500 scale-110" : "border-slate-700"}`} />
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {Object.entries(MATERIALS).map(([key, m]) => (
+                      <button key={key} onClick={() => setRoomFloorMaterial(room.id, key)}
+                        className={`text-[10px] font-semibold rounded-md py-1.5 px-1 border transition-colors ${(room.floor_material ?? "plaster") === key ? "bg-cyan-500 text-slate-950 border-cyan-500" : "bg-slate-800 hover:bg-slate-700 border-slate-700"}`}>
+                        {m.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
 
             <div>
               <div className="flex items-center justify-between mb-2">
@@ -1664,7 +1736,7 @@ export default function ArchitectStudio({ session }) {
                 </div>
               </div>
             ) : (
-              <Viewport3D rooms={rooms} stairs={stairsList} wallHeight={wallHeight} wallColor={wallColor} autoRotate={autoRotate} />
+              <Viewport3D rooms={rooms} stairs={stairsList} wallHeight={wallHeight} wallColor={wallColor} wallMaterial={wallMaterial} autoRotate={autoRotate} />
             )}
           </main>
         </div>
