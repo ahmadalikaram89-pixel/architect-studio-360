@@ -158,7 +158,7 @@ begin
     (new.id, 7, 'التسليم', 'تسليم المشروع الجاهز للمالك', false);
   return new;
 end;
-$$ language plpgsql;
+$$ language plpgsql set search_path = public;
 
 drop trigger if exists trg_create_default_phases on projects;
 create trigger trg_create_default_phases
@@ -190,7 +190,7 @@ begin
 
   return new;
 end;
-$$ language plpgsql;
+$$ language plpgsql set search_path = public;
 
 drop trigger if exists trg_create_default_subtasks on phases;
 create trigger trg_create_default_subtasks
@@ -233,7 +233,7 @@ begin
     return array[start_all + win_w / 2, start_all + (win_w + win_min_gap) + win_w / 2];
   end if;
 end;
-$$ language plpgsql immutable;
+$$ language plpgsql immutable set search_path = public;
 
 -- ============================================================
 -- دالة تنشئ تلقائياً الأبواب والنوافذ الافتراضية عند إنشاء غرفة جديدة
@@ -275,7 +275,7 @@ begin
 
   return new;
 end;
-$$ language plpgsql;
+$$ language plpgsql set search_path = public;
 
 drop trigger if exists trg_create_default_openings on rooms;
 create trigger trg_create_default_openings
