@@ -80,7 +80,7 @@ export default function ProjectSetup({ onCreate, onSignOut, userEmail, projectsL
             <input value={client} onChange={(e) => setClient(e.target.value)} placeholder="مثال: أبو محمد" className="w-full bg-slate-950 border border-slate-700 rounded-md px-3 py-2 text-sm outline-none focus:border-cyan-500" />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="text-xs text-slate-400 block mb-1.5">نوع الأرض</label>
               <select value={landType} onChange={(e) => setLandType(e.target.value)} aria-label="نوع الأرض" className="w-full bg-slate-950 border border-slate-700 rounded-md px-2.5 py-2 text-sm outline-none focus:border-cyan-500">

@@ -70,9 +70,38 @@ export default function Viewport3D({ rooms, stairs, wallHeight, wallColor, wallM
       camera.lookAt(target);
     }
 
+    // إصبع واحد = دوران (نفس منطق الفأرة سابقاً)، إصبعين = تكبير/تصغير بالقرص (pinch) —
+    // ميزة كانت غايبة بالكامل على شاشات اللمس (التكبير كان عجلة الفأرة بس، بلا أي بديل لمسي)
     let dragging = false, lastX = 0, lastY = 0;
-    function onDown(e) { dragging = true; lastX = e.clientX; lastY = e.clientY; }
+    const pointers = new Map(); // pointerId -> {x, y}
+    let pinchDist = null;
+
+    function distanceBetweenPointers() {
+      const [p1, p2] = [...pointers.values()];
+      return Math.hypot(p1.x - p2.x, p1.y - p2.y);
+    }
+    function onDown(e) {
+      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pointers.size === 1) {
+        dragging = true; lastX = e.clientX; lastY = e.clientY;
+      } else if (pointers.size === 2) {
+        dragging = false;
+        pinchDist = distanceBetweenPointers();
+      }
+    }
     function onMove(e) {
+      if (!pointers.has(e.pointerId)) { if (!dragging) return; }
+      else pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+      if (pointers.size >= 2) {
+        const dist = distanceBetweenPointers();
+        if (pinchDist) {
+          orbit.radius = clamp(orbit.radius * (pinchDist / dist), 3, 50);
+          updateCamera();
+        }
+        pinchDist = dist;
+        return;
+      }
       if (!dragging) return;
       const dx = e.clientX - lastX, dy = e.clientY - lastY;
       lastX = e.clientX; lastY = e.clientY;
@@ -80,7 +109,16 @@ export default function Viewport3D({ rooms, stairs, wallHeight, wallColor, wallM
       orbit.phi = clamp(orbit.phi - dy * 0.006, 0.15, 1.5);
       updateCamera();
     }
-    function onUp() { dragging = false; }
+    function onUp(e) {
+      pointers.delete(e.pointerId);
+      pinchDist = null;
+      if (pointers.size === 1) {
+        const [[, pt]] = pointers;
+        dragging = true; lastX = pt.x; lastY = pt.y;
+      } else if (pointers.size === 0) {
+        dragging = false;
+      }
+    }
     function onWheel(e) {
       e.preventDefault();
       orbit.radius = clamp(orbit.radius * (1 + e.deltaY * 0.001), 3, 50);
@@ -89,9 +127,11 @@ export default function Viewport3D({ rooms, stairs, wallHeight, wallColor, wallM
 
     const dom = renderer.domElement;
     dom.style.cursor = "grab";
+    dom.style.touchAction = "none";
     dom.addEventListener("pointerdown", onDown);
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
     dom.addEventListener("wheel", onWheel, { passive: false });
 
     function resize() {
@@ -143,6 +183,7 @@ export default function Viewport3D({ rooms, stairs, wallHeight, wallColor, wallM
       dom.removeEventListener("pointerdown", onDown);
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
       dom.removeEventListener("wheel", onWheel);
       ro.disconnect();
       mount.removeChild(renderer.domElement);
@@ -185,7 +226,7 @@ export default function Viewport3D({ rooms, stairs, wallHeight, wallColor, wallM
     <div className="relative w-full h-full">
       <div ref={mountRef} className="w-full h-full" />
       <div className="absolute top-3 right-3 text-[11px] font-mono text-slate-400 bg-slate-950/70 border border-slate-800 rounded-md px-2.5 py-1.5 pointer-events-none">
-        اسحب للدوران · مرّر للتكبير
+        اسحب للدوران · مرّر أو بإصبعين للتكبير
       </div>
       <button
         onClick={() => setResetKey((k) => k + 1)}

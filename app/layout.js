@@ -5,6 +5,11 @@ export const metadata = {
   description: "تصميم معماري وديكور بتقنية ثلاثية الأبعاد وعرض 360 درجة",
 };
 
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+};
+
 export default function RootLayout({ children }) {
   return (
     <html lang="ar" dir="rtl">
