@@ -9,8 +9,8 @@ import { supabase } from "../lib/supabaseClient";
 
 const statusMeta = {
   not_started: { label: "لم تبدأ", color: "text-slate-500", bg: "bg-slate-800", Icon: Circle },
-  in_progress: { label: "قيد التنفيذ", color: "text-amber-400", bg: "bg-amber-500/15", Icon: Clock3 },
-  done: { label: "مكتملة", color: "text-emerald-400", bg: "bg-emerald-500/15", Icon: CheckCircle2 },
+  in_progress: { label: "قيد التنفيذ", color: "text-amber-800", bg: "bg-amber-500/15", Icon: Clock3 },
+  done: { label: "مكتملة", color: "text-emerald-800", bg: "bg-emerald-500/15", Icon: CheckCircle2 },
 };
 
 // أيقونة كل مرحلة حسب رقمها الثابت (المحتوى نفسه بينشئه Trigger داخل قاعدة البيانات)
