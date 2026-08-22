@@ -1222,22 +1222,22 @@ export default function ArchitectStudio({ session }) {
 
   if (initializing) {
     return (
-      <div className="w-full h-screen flex items-center justify-center bg-slate-950">
+      <main className="w-full h-screen flex items-center justify-center bg-slate-950">
         <Loader2 size={24} className="text-cyan-500 animate-spin" />
-      </div>
+      </main>
     );
   }
 
   if (loadError && !project) {
     return (
-      <div dir="rtl" className="w-full h-screen flex items-center justify-center bg-slate-950 text-slate-100 px-4" style={{ fontFamily: "'Tajawal', sans-serif" }}>
+      <main dir="rtl" className="w-full h-screen flex items-center justify-center bg-slate-950 text-slate-100 px-4" style={{ fontFamily: "'Tajawal', sans-serif" }}>
         <div className="text-center space-y-3">
           <p className="flex items-center justify-center gap-1.5 text-sm text-red-400 bg-red-950/40 border border-red-900 rounded-md px-3 py-2">
             <AlertTriangle size={14} className="shrink-0" /> تعذر تحميل بياناتك: {loadError}
           </p>
           <button onClick={signOut} className="text-xs text-slate-500 hover:text-slate-300 underline underline-offset-2">تسجيل الخروج</button>
         </div>
-      </div>
+      </main>
     );
   }
 
@@ -1280,17 +1280,17 @@ export default function ArchitectStudio({ session }) {
         </div>
 
         <div className="flex items-center gap-2 bg-slate-800/70 rounded-lg p-1">
-          <button onClick={() => setView("phases")} className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${view === "phases" ? "bg-cyan-500 text-slate-950" : "text-slate-300 hover:text-white"}`}>
+          <button onClick={() => setView("phases")} className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${view === "phases" ? "bg-cyan-500 text-slate-100" : "text-slate-300 hover:text-white"}`}>
             مراحل المشروع
           </button>
-          <button onClick={() => setView("plan")} className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${view === "plan" ? "bg-cyan-500 text-slate-950" : "text-slate-300 hover:text-white"}`}>
+          <button onClick={() => setView("plan")} className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${view === "plan" ? "bg-cyan-500 text-slate-100" : "text-slate-300 hover:text-white"}`}>
             مخطط 2D
           </button>
           <button
             disabled={rooms.length === 0}
             title={rooms.length === 0 ? "ارسم غرفة واحدة على الأقل أولاً" : ""}
             onClick={() => setView("3d")}
-            className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${view === "3d" ? "bg-cyan-500 text-slate-950" : "text-slate-300 hover:text-white"}`}
+            className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${view === "3d" ? "bg-cyan-500 text-slate-100" : "text-slate-300 hover:text-white"}`}
           >
             عرض 3D · 360°
           </button>
@@ -1390,7 +1390,7 @@ export default function ArchitectStudio({ session }) {
                 <div className="flex flex-wrap items-center gap-1 bg-slate-800/70 rounded-lg p-1">
                   {floors.map((f) => (
                     <button key={f} onClick={() => setCurrentFloor(f)}
-                      className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${f === currentFloor ? "bg-cyan-500 text-slate-950" : "text-slate-300 hover:text-white"}`}>
+                      className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${f === currentFloor ? "bg-cyan-500 text-slate-100" : "text-slate-300 hover:text-white"}`}>
                       {floorLabel(f)}
                     </button>
                   ))}
@@ -1438,7 +1438,7 @@ export default function ArchitectStudio({ session }) {
                 <button onClick={loadSample} className="flex-1 flex items-center justify-center gap-1.5 text-xs font-semibold bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-md py-2 transition-colors">
                   <Sparkles size={13}/> نموذج جاهز
                 </button>
-                <button onClick={clearRooms} className="flex items-center justify-center gap-1.5 text-xs font-semibold bg-slate-800 hover:bg-red-950 hover:text-red-300 border border-slate-700 rounded-md px-3 transition-colors">
+                <button onClick={clearRooms} title="حذف كل غرف الطابق" aria-label="حذف كل غرف الطابق" className="flex items-center justify-center gap-1.5 text-xs font-semibold bg-slate-800 hover:bg-red-950 hover:text-red-300 border border-slate-700 rounded-md px-3 transition-colors">
                   <Trash2 size={13}/>
                 </button>
               </div>
@@ -1447,21 +1447,21 @@ export default function ArchitectStudio({ session }) {
                 <>
                   <button
                     onClick={() => setSnapEnabled((s) => !s)}
-                    className={`w-full flex items-center justify-center gap-1.5 text-xs font-semibold rounded-md py-2 border mt-2 transition-colors ${snapEnabled ? "bg-slate-800 hover:bg-slate-700 border-slate-700" : "bg-cyan-500 text-slate-950 border-cyan-500"}`}
+                    className={`w-full flex items-center justify-center gap-1.5 text-xs font-semibold rounded-md py-2 border mt-2 transition-colors ${snapEnabled ? "bg-slate-800 hover:bg-slate-700 border-slate-700" : "bg-cyan-500 text-slate-100 border-cyan-500"}`}
                   >
                     <Ruler size={13}/> {snapEnabled ? "الصق بالشبكة: مفعّل" : "الصق بالشبكة: معطّل (دقة حرة)"}
                   </button>
 
                   <button
                     onClick={() => setShowDimensions((s) => !s)}
-                    className={`w-full flex items-center justify-center gap-1.5 text-xs font-semibold rounded-md py-2 border mt-2 transition-colors ${showDimensions ? "bg-cyan-500 text-slate-950 border-cyan-500" : "bg-slate-800 hover:bg-slate-700 border-slate-700"}`}
+                    className={`w-full flex items-center justify-center gap-1.5 text-xs font-semibold rounded-md py-2 border mt-2 transition-colors ${showDimensions ? "bg-cyan-500 text-slate-100 border-cyan-500" : "bg-slate-800 hover:bg-slate-700 border-slate-700"}`}
                   >
                     <Ruler size={13}/> {showDimensions ? "إظهار القياسات: مفعّل" : "إظهار القياسات: معطّل"}
                   </button>
 
                   {polygonDrawMode ? (
                     <div className="flex gap-2 mt-2">
-                      <button onClick={finishPolygonDraw} className="flex-1 flex items-center justify-center gap-1.5 text-xs font-semibold bg-cyan-500 text-slate-950 rounded-md py-2 transition-colors">
+                      <button onClick={finishPolygonDraw} className="flex-1 flex items-center justify-center gap-1.5 text-xs font-semibold bg-cyan-500 text-slate-100 rounded-md py-2 transition-colors">
                         إنهاء الرسم
                       </button>
                       <button onClick={cancelPolygonDraw} className="flex-1 flex items-center justify-center gap-1.5 text-xs font-semibold bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-md py-2 transition-colors">
@@ -1492,14 +1492,14 @@ export default function ArchitectStudio({ session }) {
                   <button
                     disabled={floorRooms.length === 0}
                     onClick={() => { setSelectedOpening(null); setMovingOpeningId(null); setPlaceMode((m) => (m === "window" ? null : "window")); }}
-                    className={`flex-1 flex items-center justify-center gap-1.5 text-xs font-semibold rounded-md py-2 border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${placeMode === "window" ? "bg-cyan-500 text-slate-950 border-cyan-500" : "bg-slate-800 hover:bg-slate-700 border-slate-700"}`}
+                    className={`flex-1 flex items-center justify-center gap-1.5 text-xs font-semibold rounded-md py-2 border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${placeMode === "window" ? "bg-cyan-500 text-slate-100 border-cyan-500" : "bg-slate-800 hover:bg-slate-700 border-slate-700"}`}
                   >
                     <AppWindow size={13}/> نافذة+
                   </button>
                   <button
                     disabled={floorRooms.length === 0}
                     onClick={() => { setSelectedOpening(null); setMovingOpeningId(null); setPlaceMode((m) => (m === "door" ? null : "door")); }}
-                    className={`flex-1 flex items-center justify-center gap-1.5 text-xs font-semibold rounded-md py-2 border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${placeMode === "door" ? "bg-cyan-500 text-slate-950 border-cyan-500" : "bg-slate-800 hover:bg-slate-700 border-slate-700"}`}
+                    className={`flex-1 flex items-center justify-center gap-1.5 text-xs font-semibold rounded-md py-2 border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${placeMode === "door" ? "bg-cyan-500 text-slate-100 border-cyan-500" : "bg-slate-800 hover:bg-slate-700 border-slate-700"}`}
                   >
                     <DoorOpen size={13}/> باب+
                   </button>
@@ -1532,7 +1532,7 @@ export default function ArchitectStudio({ session }) {
                             key={kind}
                             disabled={floorRooms.length === 0}
                             onClick={() => { setSelectedOpening(null); setSelectedFurniture(null); setMovingFurnitureId(null); setPlaceMode((m) => (m === `furniture:${kind}` ? null : `furniture:${kind}`)); }}
-                            className={`flex items-center justify-center text-center text-[10px] font-semibold rounded-md py-2 px-1 border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${placeMode === `furniture:${kind}` ? "bg-cyan-500 text-slate-950 border-cyan-500" : "bg-slate-800 hover:bg-slate-700 border-slate-700"}`}
+                            className={`flex items-center justify-center text-center text-[10px] font-semibold rounded-md py-2 px-1 border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${placeMode === `furniture:${kind}` ? "bg-cyan-500 text-slate-100 border-cyan-500" : "bg-slate-800 hover:bg-slate-700 border-slate-700"}`}
                           >
                             {meta.label}
                           </button>
@@ -1559,7 +1559,7 @@ export default function ArchitectStudio({ session }) {
                 <p className="text-xs font-semibold text-slate-400 mb-2 flex items-center gap-1.5"><ChevronUp size={13}/> السلالم</p>
                 <button
                   onClick={() => { setSelectedOpening(null); setSelectedFurniture(null); setSelectedStair(null); setMovingStairId(null); setPlaceMode((m) => (m === "stairs" ? null : "stairs")); }}
-                  className={`w-full flex items-center justify-center gap-1.5 text-xs font-semibold rounded-md py-2 border transition-colors ${placeMode === "stairs" ? "bg-cyan-500 text-slate-950 border-cyan-500" : "bg-slate-800 hover:bg-slate-700 border-slate-700"}`}
+                  className={`w-full flex items-center justify-center gap-1.5 text-xs font-semibold rounded-md py-2 border transition-colors ${placeMode === "stairs" ? "bg-cyan-500 text-slate-100 border-cyan-500" : "bg-slate-800 hover:bg-slate-700 border-slate-700"}`}
                 >
                   سلم+ (من {floorLabel(currentFloor)} لـ {floorLabel(currentFloor + 1)})
                 </button>
@@ -1604,7 +1604,7 @@ export default function ArchitectStudio({ session }) {
                 <div className="grid grid-cols-3 gap-1.5">
                   {Object.entries(MATERIALS).map(([key, m]) => (
                     <button key={key} disabled={floorRooms.length === 0} onClick={() => setFloorWallMaterial(key)}
-                      className={`text-[10px] font-semibold rounded-md py-1.5 px-1 border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${currentFloorWallMaterial() === key ? "bg-cyan-500 text-slate-950 border-cyan-500" : "bg-slate-800 hover:bg-slate-700 border-slate-700"}`}>
+                      className={`text-[10px] font-semibold rounded-md py-1.5 px-1 border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${currentFloorWallMaterial() === key ? "bg-cyan-500 text-slate-100 border-cyan-500" : "bg-slate-800 hover:bg-slate-700 border-slate-700"}`}>
                       {m.label}
                     </button>
                   ))}
@@ -1617,6 +1617,7 @@ export default function ArchitectStudio({ session }) {
                 <p className="text-xs font-semibold text-slate-400 mb-2 flex items-center gap-1.5"><Ruler size={13}/> ارتفاع جدران {floorLabel(currentFloor)}</p>
                 <input
                   type="range" min="2" max="4.5" step="0.1"
+                  aria-label={`ارتفاع جدران ${floorLabel(currentFloor)}`}
                   value={currentFloorWallHeight()}
                   disabled={floorRooms.length === 0}
                   onChange={(e) => previewFloorWallHeight(parseFloat(e.target.value))}
@@ -1638,7 +1639,7 @@ export default function ArchitectStudio({ session }) {
               <div>
                 <p className="text-xs font-semibold text-slate-400 mb-2">جولة 360°</p>
                 <button onClick={() => setAutoRotate((a) => !a)}
-                  className={`w-full flex items-center justify-center gap-2 text-sm font-semibold rounded-md py-2 transition-colors ${autoRotate ? "bg-cyan-500 text-slate-950" : "bg-slate-800 hover:bg-slate-700 border border-slate-700"}`}>
+                  className={`w-full flex items-center justify-center gap-2 text-sm font-semibold rounded-md py-2 transition-colors ${autoRotate ? "bg-cyan-500 text-slate-100" : "bg-slate-800 hover:bg-slate-700 border border-slate-700"}`}>
                   {autoRotate ? <PauseCircle size={16}/> : <PlayCircle size={16}/>}
                   {autoRotate ? "إيقاف الدوران التلقائي" : "تشغيل الدوران التلقائي"}
                 </button>
@@ -1656,7 +1657,7 @@ export default function ArchitectStudio({ session }) {
                   return (
                     <>
                       <button onClick={() => toggleRoomRoof(room.id)}
-                        className={`w-full flex items-center justify-center gap-2 text-sm font-semibold rounded-md py-2 transition-colors ${room.has_roof ? "bg-cyan-500 text-slate-950" : "bg-slate-800 hover:bg-slate-700 border border-slate-700"}`}>
+                        className={`w-full flex items-center justify-center gap-2 text-sm font-semibold rounded-md py-2 transition-colors ${room.has_roof ? "bg-cyan-500 text-slate-100" : "bg-slate-800 hover:bg-slate-700 border border-slate-700"}`}>
                         {room.has_roof ? "إزالة سطح الغرفة" : "إضافة سطح للغرفة"}
                       </button>
                       <p className="text-[11px] text-slate-500 mt-2 leading-relaxed">
@@ -1667,22 +1668,22 @@ export default function ArchitectStudio({ session }) {
                           <p className="text-[11px] text-slate-500 mb-1.5">نوع السطح</p>
                           <div className="grid grid-cols-3 gap-2">
                             <button onClick={() => setRoomRoofType(room.id, "flat")}
-                              className={`text-xs font-semibold rounded-md py-1.5 transition-colors ${(room.roof_type ?? "flat") === "flat" ? "bg-cyan-500 text-slate-950" : "bg-slate-800 hover:bg-slate-700 border border-slate-700"}`}>
+                              className={`text-xs font-semibold rounded-md py-1.5 transition-colors ${(room.roof_type ?? "flat") === "flat" ? "bg-cyan-500 text-slate-100" : "bg-slate-800 hover:bg-slate-700 border border-slate-700"}`}>
                               مسطح
                             </button>
                             <button onClick={() => setRoomRoofType(room.id, "gable")}
-                              className={`text-xs font-semibold rounded-md py-1.5 transition-colors ${room.roof_type === "gable" ? "bg-cyan-500 text-slate-950" : "bg-slate-800 hover:bg-slate-700 border border-slate-700"}`}>
+                              className={`text-xs font-semibold rounded-md py-1.5 transition-colors ${room.roof_type === "gable" ? "bg-cyan-500 text-slate-100" : "bg-slate-800 hover:bg-slate-700 border border-slate-700"}`}>
                               جملوني
                             </button>
                             <button onClick={() => setRoomRoofType(room.id, "hip")}
-                              className={`text-xs font-semibold rounded-md py-1.5 transition-colors ${room.roof_type === "hip" ? "bg-cyan-500 text-slate-950" : "bg-slate-800 hover:bg-slate-700 border border-slate-700"}`}>
+                              className={`text-xs font-semibold rounded-md py-1.5 transition-colors ${room.roof_type === "hip" ? "bg-cyan-500 text-slate-100" : "bg-slate-800 hover:bg-slate-700 border border-slate-700"}`}>
                               أربعة ميول
                             </button>
                           </div>
                         </div>
                       )}
                       {room.has_roof && room.points && (
-                        <p className="text-[11px] text-slate-600 mt-2 leading-relaxed">
+                        <p className="text-[11px] text-slate-500 mt-2 leading-relaxed">
                           السطح الجملوني وأربعة الميول غير متاحين للغرف حرة الشكل — سطح مسطح بس بالإصدار الحالي.
                         </p>
                       )}
@@ -1707,7 +1708,7 @@ export default function ArchitectStudio({ session }) {
                   <div className="grid grid-cols-3 gap-1.5">
                     {Object.entries(MATERIALS).map(([key, m]) => (
                       <button key={key} onClick={() => setRoomFloorMaterial(room.id, key)}
-                        className={`text-[10px] font-semibold rounded-md py-1.5 px-1 border transition-colors ${(room.floor_material ?? "plaster") === key ? "bg-cyan-500 text-slate-950 border-cyan-500" : "bg-slate-800 hover:bg-slate-700 border-slate-700"}`}>
+                        className={`text-[10px] font-semibold rounded-md py-1.5 px-1 border transition-colors ${(room.floor_material ?? "plaster") === key ? "bg-cyan-500 text-slate-100 border-cyan-500" : "bg-slate-800 hover:bg-slate-700 border-slate-700"}`}>
                         {m.label}
                       </button>
                     ))}
@@ -1722,7 +1723,7 @@ export default function ArchitectStudio({ session }) {
                 <p className="text-[11px] font-mono text-slate-500">{totalArea.toFixed(1)} م²</p>
               </div>
               <div className="space-y-1.5">
-                {floorRooms.length === 0 && <p className="text-[11px] text-slate-600">لا توجد غرف بعد بهاد الطابق.</p>}
+                {floorRooms.length === 0 && <p className="text-[11px] text-slate-500">لا توجد غرف بعد بهاد الطابق.</p>}
                 {floorRooms.map((r) => (
                   <div key={r.id} onClick={() => setSelectedId(r.id)}
                     className={`flex items-center justify-between rounded-md px-2.5 py-2 border cursor-pointer transition-colors ${selectedId === r.id ? "border-cyan-500 bg-slate-800/80" : "border-slate-800 bg-slate-900/60 hover:bg-slate-800/60"}`}>
@@ -1731,6 +1732,7 @@ export default function ArchitectStudio({ session }) {
                       <div className="min-w-0">
                         <select
                           value={r.name}
+                          aria-label="نوع الغرفة"
                           onClick={(e) => e.stopPropagation()}
                           onChange={(e) => renameRoom(r.id, e.target.value)}
                           className="text-xs font-semibold bg-transparent outline-none cursor-pointer max-w-[7.5rem] -mx-0.5 px-0.5 rounded hover:bg-slate-800/80 focus:bg-slate-800 focus:border focus:border-cyan-500"
@@ -1740,7 +1742,7 @@ export default function ArchitectStudio({ session }) {
                         <p className="text-[10px] font-mono text-slate-500">{roomArea(r).toFixed(1)} م²</p>
                       </div>
                     </div>
-                    <button onClick={(e) => { e.stopPropagation(); deleteRoom(r.id); }} className="text-slate-500 hover:text-red-400 shrink-0">
+                    <button onClick={(e) => { e.stopPropagation(); deleteRoom(r.id); }} title="حذف الغرفة" aria-label="حذف الغرفة" className="text-slate-500 hover:text-red-400 shrink-0">
                       <X size={14} />
                     </button>
                   </div>

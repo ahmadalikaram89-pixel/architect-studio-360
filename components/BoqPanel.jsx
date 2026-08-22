@@ -37,14 +37,17 @@ export default function BoqPanel({ items, onClose, projectName }) {
   return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={onClose}>
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="boq-panel-title"
         className="bg-slate-950 border border-slate-800 rounded-lg shadow-xl w-full max-w-2xl max-h-[85vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between p-4 border-b border-slate-800 sticky top-0 bg-slate-950">
-          <h2 className="text-base font-bold flex items-center gap-2">
+          <h2 id="boq-panel-title" className="text-base font-bold flex items-center gap-2">
             <Calculator size={16} /> جدول الكميات (تقدير أولي)
           </h2>
-          <button onClick={onClose} className="text-slate-500 hover:text-slate-300">
+          <button onClick={onClose} title="إغلاق" aria-label="إغلاق" className="text-slate-500 hover:text-slate-300">
             <X size={18} />
           </button>
         </div>
@@ -54,7 +57,7 @@ export default function BoqPanel({ items, onClose, projectName }) {
             كميات محسوبة تلقائياً من التصميم الحالي. عدّلي سعر الوحدة حسب سوقك المحلي — الإجمالي بيتحدث فوراً.
             هاد تقدير أولي بس لمساعدتك بالميزانية المبدئية، مو جدول كميات هندسي نهائي بديل عن مكتب حساب كميات.
           </p>
-          <p className="text-[11px] text-amber-400/90 mb-3 leading-relaxed">
+          <p className="text-[11px] text-amber-800 mb-3 leading-relaxed">
             بنود الخرسانة والحديد مبنية على "التقدير الإنشائي الأولي" (قواعد إبهام، بلا حساب أحمال أو تسليح فعلي —
             نفس تحذير السلامة هناك ينطبق هون بالكامل). حجم خرسانة الأعمدة وحديدها <strong>غير مضمّن</strong> لأنه
             البرنامج ما بيحدد مواقع أعمدة فعلية.
@@ -75,7 +78,7 @@ export default function BoqPanel({ items, onClose, projectName }) {
                 {items.map((item) => (
                   <tr key={item.key} className="border-b border-slate-900">
                     <td className="py-1.5 pl-2">{item.label}</td>
-                    <td className="py-1.5 px-2 text-slate-600">{item.unit}</td>
+                    <td className="py-1.5 px-2 text-slate-500">{item.unit}</td>
                     <td className="py-1.5 px-2 font-mono">{item.quantity.toLocaleString()}</td>
                     <td className="py-1.5 px-2">
                       <input

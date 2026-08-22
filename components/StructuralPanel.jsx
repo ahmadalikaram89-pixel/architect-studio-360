@@ -16,14 +16,17 @@ export default function StructuralPanel({ estimate, onClose }) {
   return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={onClose}>
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="structural-panel-title"
         className="bg-slate-950 border border-slate-800 rounded-lg shadow-xl w-full max-w-2xl max-h-[85vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between p-4 border-b border-slate-800 sticky top-0 bg-slate-950">
-          <h2 className="text-base font-bold flex items-center gap-2">
+          <h2 id="structural-panel-title" className="text-base font-bold flex items-center gap-2">
             <HardHat size={16} /> تقدير إنشائي أولي
           </h2>
-          <button onClick={onClose} className="text-slate-500 hover:text-slate-300">
+          <button onClick={onClose} title="إغلاق" aria-label="إغلاق" className="text-slate-500 hover:text-slate-300">
             <X size={18} />
           </button>
         </div>
@@ -58,7 +61,7 @@ export default function StructuralPanel({ estimate, onClose }) {
                     {byFloor.get(floorNum).map((r) => (
                       <tr key={r.roomId} className="border-b border-slate-900">
                         <td className="py-1.5 pl-2">{r.name}</td>
-                        <td className="py-1.5 px-2 font-mono text-slate-600" dir="ltr">{r.shortSpan.toFixed(1)}×{r.longSpan.toFixed(1)} م</td>
+                        <td className="py-1.5 px-2 font-mono text-slate-500" dir="ltr">{r.shortSpan.toFixed(1)}×{r.longSpan.toFixed(1)} م</td>
                         <td className="py-1.5 px-2 font-mono">{r.slabThicknessMm} مم</td>
                         <td className="py-1.5 pr-2 font-mono" dir="ltr">{r.beamWidthMm}×{r.beamDepthMm} مم</td>
                       </tr>

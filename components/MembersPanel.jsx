@@ -26,14 +26,17 @@ export default function MembersPanel({ members, isOwner, myUserId, onInvite, onR
   return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={onClose}>
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="members-panel-title"
         className="bg-slate-950 border border-slate-800 rounded-lg shadow-xl w-full max-w-md max-h-[85vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between p-4 border-b border-slate-800 sticky top-0 bg-slate-950">
-          <h2 className="text-base font-bold flex items-center gap-2">
+          <h2 id="members-panel-title" className="text-base font-bold flex items-center gap-2">
             <Users size={16} /> أعضاء المشروع
           </h2>
-          <button onClick={onClose} className="text-slate-500 hover:text-slate-300">
+          <button onClick={onClose} title="إغلاق" aria-label="إغلاق" className="text-slate-500 hover:text-slate-300">
             <X size={18} />
           </button>
         </div>
@@ -56,6 +59,7 @@ export default function MembersPanel({ members, isOwner, myUserId, onInvite, onR
               <div className="flex items-center gap-2">
                 <select
                   value={role}
+                  aria-label="صلاحية العضو المدعو"
                   onChange={(e) => setRole(e.target.value)}
                   className="flex-1 bg-slate-800 border border-slate-700 rounded-md px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none focus:border-cyan-500"
                 >
@@ -65,7 +69,7 @@ export default function MembersPanel({ members, isOwner, myUserId, onInvite, onR
                 <button
                   type="submit"
                   disabled={submitting || !email.trim()}
-                  className="flex items-center gap-1.5 text-xs font-semibold bg-cyan-500 text-slate-950 rounded-md px-3 py-1.5 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-cyan-400"
+                  className="flex items-center gap-1.5 text-xs font-semibold bg-cyan-500 text-slate-100 rounded-md px-3 py-1.5 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-cyan-400"
                 >
                   <UserPlus size={13} /> دعوة
                 </button>
@@ -92,6 +96,7 @@ export default function MembersPanel({ members, isOwner, myUserId, onInvite, onR
                     <>
                       <select
                         value={m.role}
+                        aria-label={`صلاحية ${m.invited_email}`}
                         onChange={(e) => onChangeRole(m.id, e.target.value)}
                         className="bg-slate-800 border border-slate-700 rounded-md px-1.5 py-1 text-[10px] text-slate-200 focus:outline-none"
                       >
@@ -114,7 +119,7 @@ export default function MembersPanel({ members, isOwner, myUserId, onInvite, onR
           </div>
 
           {isOwner && (
-            <p className="text-[10px] text-slate-600 flex items-center gap-1">
+            <p className="text-[10px] text-slate-500 flex items-center gap-1">
               <Crown size={11} /> أنت مالك المشروع — صلاحياتك كاملة دايماً، ما في داعي تضيف نفسك كعضو.
             </p>
           )}
