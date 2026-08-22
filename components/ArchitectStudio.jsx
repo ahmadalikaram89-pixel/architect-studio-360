@@ -5,6 +5,7 @@ import {
   Layers, Trash2, RotateCw, PlayCircle, PauseCircle, Ruler, Sparkles, X, PencilRuler,
   FolderPlus, ChevronDown, ChevronUp, Plus,
   Loader2, AlertTriangle, LogOut, AppWindow, DoorOpen, Printer, Folders, Move, Armchair, Undo2, Redo2, FileDown, Calculator, Box, HardHat, Users, Lock,
+  MoreVertical, Menu,
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 import { computeMembership } from "../lib/collaboration";
@@ -64,6 +65,8 @@ export default function ArchitectStudio({ session }) {
   const [phases, setPhases] = useState([]);
   const [view, setView] = useState("phases"); // 'phases' | 'plan' | '3d'
   const [confirmReset, setConfirmReset] = useState(false);
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false); // قائمة "المزيد" بالهيدر على الشاشات الصغيرة
+  const [sidebarOpen, setSidebarOpen] = useState(false); // القائمة الجانبية كـ drawer على الشاشات الصغيرة
   const [loadError, setLoadError] = useState("");
   const [initializing, setInitializing] = useState(true);
   const [toasts, setToasts] = useState([]); // [{id, message}] — إشعارات فشل الحفظ (الحالة المحلية اتغيّرت بس الكتابة لقاعدة البيانات فشلت)
@@ -1297,40 +1300,14 @@ export default function ArchitectStudio({ session }) {
         </div>
 
         <div className="flex items-center gap-1">
-          {projectsList.length > 1 && (
-            <div className="relative">
-              <button onClick={() => setSwitcherOpen((o) => !o)} className="flex items-center gap-1.5 text-xs font-semibold text-slate-400 hover:text-slate-200 px-2 py-1.5">
-                <Folders size={13} /> مشاريعي
-              </button>
-              {switcherOpen && (
-                <>
-                  <div className="fixed inset-0 z-10" onClick={() => setSwitcherOpen(false)} />
-                  <div className="absolute left-0 top-full mt-1 w-64 max-h-80 overflow-y-auto bg-slate-900 border border-slate-700 rounded-lg shadow-2xl z-20 p-1.5">
-                    {projectsList.map((p) => (
-                      <button key={p.id} onClick={() => loadProjectById(p.id)}
-                        className={`w-full text-right px-2.5 py-2 rounded-md text-xs transition-colors ${p.id === project.id ? "bg-cyan-500/20 text-cyan-300" : "hover:bg-slate-800 text-slate-200"}`}>
-                        <p className="font-semibold truncate">{p.name}</p>
-                        <p className="text-[10px] text-slate-500 font-mono truncate">{p.land_type} · {p.city || "—"}</p>
-                      </button>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-          {confirmReset ? (
-            <div className="flex items-center gap-1.5 text-xs">
-              <span className="text-slate-400">متأكد؟</span>
-              <button onClick={startOver} className="px-2.5 py-1 rounded-md bg-red-600/80 hover:bg-red-600 font-semibold">نعم، ابدأ من جديد</button>
-              <button onClick={() => setConfirmReset(false)} className="px-2.5 py-1 rounded-md bg-slate-800 hover:bg-slate-700">تراجع</button>
-            </div>
-          ) : (
-            <button onClick={() => setConfirmReset(true)} className="flex items-center gap-1.5 text-xs font-semibold text-slate-400 hover:text-slate-200 px-2 py-1.5">
-              <FolderPlus size={13} /> مشروع جديد
+          {(view === "plan" || view === "3d") && (
+            <button onClick={() => setSidebarOpen((o) => !o)} title="القائمة الجانبية" aria-label="فتح/إغلاق القائمة الجانبية"
+              className="lg:hidden flex items-center justify-center text-slate-400 hover:text-slate-200 p-1.5 rounded-md hover:bg-slate-800 -ml-1">
+              <Menu size={17} />
             </button>
           )}
           {(view === "plan" || view === "3d") && (
-            <div className="flex items-center gap-0.5 ml-1">
+            <div className="flex items-center gap-0.5">
               <button onClick={undo} disabled={historyRef.current.past.length === 0} title="تراجع (Ctrl+Z)"
                 className="flex items-center justify-center text-slate-400 hover:text-slate-200 disabled:opacity-30 disabled:cursor-not-allowed p-1.5 rounded-md hover:bg-slate-800">
                 <Undo2 size={15} />
@@ -1341,27 +1318,73 @@ export default function ArchitectStudio({ session }) {
               </button>
             </div>
           )}
-          <button onClick={handlePrint} title="طباعة المخطط / حفظ PDF" className="flex items-center gap-1.5 text-xs font-semibold text-slate-400 hover:text-slate-200 px-2 py-1.5">
-            <Printer size={13} /> طباعة / PDF
+
+          {/* زر "المزيد" — يظهر بدل الصف الكامل على الشاشات الصغيرة بس (md فما دون) */}
+          <button onClick={() => setMoreMenuOpen((o) => !o)} title="المزيد" aria-label="المزيد من الإجراءات"
+            className="relative z-30 md:hidden flex items-center justify-center text-slate-400 hover:text-slate-200 p-1.5 rounded-md hover:bg-slate-800">
+            <MoreVertical size={17} />
           </button>
-          <button onClick={handleExportDxf} disabled={rooms.length === 0} title="تصدير المخطط بصيغة DXF (متوافقة مباشرة مع AutoCAD)" className="flex items-center gap-1.5 text-xs font-semibold text-slate-400 hover:text-slate-200 disabled:opacity-40 disabled:cursor-not-allowed px-2 py-1.5">
-            <FileDown size={13} /> تصدير DXF
-          </button>
-          <button onClick={handleExportIfc} disabled={rooms.length === 0} title="تصدير نموذج BIM بصيغة IFC4 (تقدير أولي — جدران/أرضيات/أسطح/أبواب/نوافذ/سلالم بهندسة ثلاثية الأبعاد حقيقية)" className="flex items-center gap-1.5 text-xs font-semibold text-slate-400 hover:text-slate-200 disabled:opacity-40 disabled:cursor-not-allowed px-2 py-1.5">
-            <Box size={13} /> تصدير IFC
-          </button>
-          <button onClick={() => setBoqOpen(true)} disabled={rooms.length === 0} title="جدول كميات تقديري (مساحات/جدران/أبواب/نوافذ) مع أسعار وحدة قابلة للتعديل" className="flex items-center gap-1.5 text-xs font-semibold text-slate-400 hover:text-slate-200 disabled:opacity-40 disabled:cursor-not-allowed px-2 py-1.5">
-            <Calculator size={13} /> جدول الكميات
-          </button>
-          <button onClick={() => setStructuralOpen(true)} disabled={rooms.length === 0} title="تقدير إنشائي أولي بقواعد الإبهام السريعة (سماكة بلاطة/أبعاد كمرة تقريبية) — مو بديل عن مهندس إنشائي مرخّص" className="flex items-center gap-1.5 text-xs font-semibold text-slate-400 hover:text-slate-200 disabled:opacity-40 disabled:cursor-not-allowed px-2 py-1.5">
-            <HardHat size={13} /> تقدير إنشائي
-          </button>
-          <button onClick={() => setMembersOpen(true)} title="أعضاء المشروع — دعوة بصلاحيات محرّر/مُشاهد، بلا مزامنة حية" className="flex items-center gap-1.5 text-xs font-semibold text-slate-400 hover:text-slate-200 px-2 py-1.5">
-            <Users size={13} /> أعضاء المشروع
-          </button>
-          <button onClick={signOut} title="تسجيل الخروج" className="flex items-center gap-1.5 text-xs font-semibold text-slate-400 hover:text-slate-200 px-2 py-1.5">
-            <LogOut size={13} /> خروج
-          </button>
+
+          <div className="relative">
+            {moreMenuOpen && <div className="fixed inset-0 z-10 md:hidden" onClick={() => setMoreMenuOpen(false)} />}
+            <div className={`${moreMenuOpen ? "flex" : "hidden"} md:flex flex-col md:flex-row items-stretch md:items-center gap-1
+              absolute md:static left-0 top-full mt-1 md:mt-0 w-60 md:w-auto
+              bg-slate-900 md:bg-transparent border md:border-0 border-slate-700 rounded-lg md:rounded-none shadow-2xl md:shadow-none p-1.5 md:p-0 z-20`}>
+              {projectsList.length > 1 && (
+                <div className="relative">
+                  <button onClick={() => setSwitcherOpen((o) => !o)} className="w-full md:w-auto flex items-center gap-1.5 text-xs font-semibold text-slate-400 hover:text-slate-200 px-2 py-1.5">
+                    <Folders size={13} /> مشاريعي
+                  </button>
+                  {switcherOpen && (
+                    <>
+                      <div className="fixed inset-0 z-10" onClick={() => setSwitcherOpen(false)} />
+                      <div className="absolute left-0 top-full mt-1 w-64 max-h-80 overflow-y-auto bg-slate-900 border border-slate-700 rounded-lg shadow-2xl z-20 p-1.5">
+                        {projectsList.map((p) => (
+                          <button key={p.id} onClick={() => loadProjectById(p.id)}
+                            className={`w-full text-right px-2.5 py-2 rounded-md text-xs transition-colors ${p.id === project.id ? "bg-cyan-500/20 text-cyan-300" : "hover:bg-slate-800 text-slate-200"}`}>
+                            <p className="font-semibold truncate">{p.name}</p>
+                            <p className="text-[10px] text-slate-500 font-mono truncate">{p.land_type} · {p.city || "—"}</p>
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+              {confirmReset ? (
+                <div className="flex items-center gap-1.5 text-xs px-2 py-1.5 md:px-0 md:py-0">
+                  <span className="text-slate-400">متأكد؟</span>
+                  <button onClick={startOver} className="px-2.5 py-1 rounded-md bg-red-600/80 hover:bg-red-600 font-semibold">نعم، ابدأ من جديد</button>
+                  <button onClick={() => setConfirmReset(false)} className="px-2.5 py-1 rounded-md bg-slate-800 hover:bg-slate-700">تراجع</button>
+                </div>
+              ) : (
+                <button onClick={() => setConfirmReset(true)} className="w-full md:w-auto flex items-center gap-1.5 text-xs font-semibold text-slate-400 hover:text-slate-200 px-2 py-1.5">
+                  <FolderPlus size={13} /> مشروع جديد
+                </button>
+              )}
+              <button onClick={handlePrint} title="طباعة المخطط / حفظ PDF" className="w-full md:w-auto flex items-center gap-1.5 text-xs font-semibold text-slate-400 hover:text-slate-200 px-2 py-1.5">
+                <Printer size={13} /> طباعة / PDF
+              </button>
+              <button onClick={handleExportDxf} disabled={rooms.length === 0} title="تصدير المخطط بصيغة DXF (متوافقة مباشرة مع AutoCAD)" className="w-full md:w-auto flex items-center gap-1.5 text-xs font-semibold text-slate-400 hover:text-slate-200 disabled:opacity-40 disabled:cursor-not-allowed px-2 py-1.5">
+                <FileDown size={13} /> تصدير DXF
+              </button>
+              <button onClick={handleExportIfc} disabled={rooms.length === 0} title="تصدير نموذج BIM بصيغة IFC4 (تقدير أولي — جدران/أرضيات/أسطح/أبواب/نوافذ/سلالم بهندسة ثلاثية الأبعاد حقيقية)" className="w-full md:w-auto flex items-center gap-1.5 text-xs font-semibold text-slate-400 hover:text-slate-200 disabled:opacity-40 disabled:cursor-not-allowed px-2 py-1.5">
+                <Box size={13} /> تصدير IFC
+              </button>
+              <button onClick={() => setBoqOpen(true)} disabled={rooms.length === 0} title="جدول كميات تقديري (مساحات/جدران/أبواب/نوافذ) مع أسعار وحدة قابلة للتعديل" className="w-full md:w-auto flex items-center gap-1.5 text-xs font-semibold text-slate-400 hover:text-slate-200 disabled:opacity-40 disabled:cursor-not-allowed px-2 py-1.5">
+                <Calculator size={13} /> جدول الكميات
+              </button>
+              <button onClick={() => setStructuralOpen(true)} disabled={rooms.length === 0} title="تقدير إنشائي أولي بقواعد الإبهام السريعة (سماكة بلاطة/أبعاد كمرة تقريبية) — مو بديل عن مهندس إنشائي مرخّص" className="w-full md:w-auto flex items-center gap-1.5 text-xs font-semibold text-slate-400 hover:text-slate-200 disabled:opacity-40 disabled:cursor-not-allowed px-2 py-1.5">
+                <HardHat size={13} /> تقدير إنشائي
+              </button>
+              <button onClick={() => setMembersOpen(true)} title="أعضاء المشروع — دعوة بصلاحيات محرّر/مُشاهد، بلا مزامنة حية" className="w-full md:w-auto flex items-center gap-1.5 text-xs font-semibold text-slate-400 hover:text-slate-200 px-2 py-1.5">
+                <Users size={13} /> أعضاء المشروع
+              </button>
+              <button onClick={signOut} title="تسجيل الخروج" className="w-full md:w-auto flex items-center gap-1.5 text-xs font-semibold text-slate-400 hover:text-slate-200 px-2 py-1.5">
+                <LogOut size={13} /> خروج
+              </button>
+            </div>
+          </div>
         </div>
       </header>
 
@@ -1382,8 +1405,12 @@ export default function ArchitectStudio({ session }) {
       )}
 
       {(view === "plan" || view === "3d") && (
-        <div className="flex-1 flex overflow-hidden">
-          <aside className="w-72 shrink-0 border-l border-slate-800 bg-slate-900/40 overflow-y-auto p-4 space-y-6">
+        <div className="flex-1 flex overflow-hidden relative">
+          {sidebarOpen && (
+            <div className="lg:hidden absolute inset-0 z-20 bg-black/50" onClick={() => setSidebarOpen(false)} />
+          )}
+          <aside className={`${sidebarOpen ? "flex" : "hidden"} lg:flex flex-col absolute lg:static inset-y-0 right-0 lg:inset-auto z-30 lg:z-auto
+            w-72 shrink-0 border-l border-slate-800 bg-slate-900 lg:bg-slate-900/40 overflow-y-auto p-4 space-y-6 shadow-2xl lg:shadow-none`}>
             {view === "plan" && (
               <div>
                 <p className="text-xs font-semibold text-slate-400 mb-2">الطوابق</p>
