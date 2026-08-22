@@ -141,6 +141,9 @@ create index if not exists idx_furniture_room on furniture(room_id);
 create index if not exists idx_stairs_project on stairs(project_id);
 create index if not exists idx_project_members_project on project_members(project_id);
 create index if not exists idx_project_members_user on project_members(user_id);
+-- projects.user_id مُستخدم بكل سياسة RLS تقريباً (مباشرة أو عبر has_project_*_access) — بلا
+-- هاد الفهرس، كل فحص وصول كان بيعمل سلسلة كاملة (sequential scan) على جدول projects
+create index if not exists idx_projects_user_id on projects(user_id);
 
 -- ============================================================
 -- دالة تنشئ تلقائياً المراحل السبعة الافتراضية عند إنشاء مشروع جديد
@@ -289,18 +292,20 @@ create trigger trg_create_default_openings
 -- يعاد استخدامهم بكل سياسة بدل تكرار المنطق بكل جدول — نفس فلسفة إعادة الاستخدام
 -- بالمشروع كله (openingRowToShape، computeSharedBoundaries...)
 -- ============================================================
+-- (select auth.uid()) بدل auth.uid() مباشرة — بيخلي Postgres يقيّمها مرة وحدة (InitPlan) بدل
+-- ما يعيد تقييمها لكل صف، نفس المنطق بالضبط بس أسرع على نطاق أكبر (توصية Supabase الرسمية)
 create or replace function has_project_read_access(target_project_id uuid)
 returns boolean language sql security definer stable set search_path = public as $$
-  select exists (select 1 from projects p where p.id = target_project_id and p.user_id = auth.uid())
-      or exists (select 1 from project_members m where m.project_id = target_project_id and m.user_id = auth.uid());
+  select exists (select 1 from projects p where p.id = target_project_id and p.user_id = (select auth.uid()))
+      or exists (select 1 from project_members m where m.project_id = target_project_id and m.user_id = (select auth.uid()));
 $$;
 
 create or replace function has_project_write_access(target_project_id uuid)
 returns boolean language sql security definer stable set search_path = public as $$
-  select exists (select 1 from projects p where p.id = target_project_id and p.user_id = auth.uid())
+  select exists (select 1 from projects p where p.id = target_project_id and p.user_id = (select auth.uid()))
       or exists (
         select 1 from project_members m
-        where m.project_id = target_project_id and m.user_id = auth.uid() and m.role = 'editor'
+        where m.project_id = target_project_id and m.user_id = (select auth.uid()) and m.role = 'editor'
       );
 $$;
 
@@ -352,9 +357,9 @@ alter table project_members enable row level security;
 
 drop policy if exists "own projects" on projects;
 create policy "projects select" on projects for select using (has_project_read_access(id));
-create policy "projects insert" on projects for insert with check (auth.uid() = user_id);
+create policy "projects insert" on projects for insert with check ((select auth.uid()) = user_id);
 create policy "projects update" on projects for update using (has_project_write_access(id)) with check (has_project_write_access(id));
-create policy "projects delete" on projects for delete using (auth.uid() = user_id); -- حذف المشروع كامل: المالك بس، حتى الـ editor ما بيقدر
+create policy "projects delete" on projects for delete using ((select auth.uid()) = user_id); -- حذف المشروع كامل: المالك بس، حتى الـ editor ما بيقدر
 
 drop policy if exists "own phases" on phases;
 create policy "phases select" on phases for select using (has_project_read_access(project_id));
@@ -408,24 +413,24 @@ create policy "members select" on project_members
 -- بتتفحص القيم الفعلية للصف الجديد مباشرة بدون استعلام، فبتشتغل صح
 create policy "members select own membership row" on project_members
   for select using (
-    user_id = auth.uid()
-    or (user_id is null and lower(invited_email) = lower(auth.jwt() ->> 'email'))
+    user_id = (select auth.uid())
+    or (user_id is null and lower(invited_email) = lower((select auth.jwt()) ->> 'email'))
   );
 
 create policy "members insert by owner" on project_members
-  for insert with check (exists (select 1 from projects p where p.id = project_id and p.user_id = auth.uid()));
+  for insert with check (exists (select 1 from projects p where p.id = project_id and p.user_id = (select auth.uid())));
 
 create policy "members update by owner" on project_members
-  for update using (exists (select 1 from projects p where p.id = project_id and p.user_id = auth.uid()))
-  with check (exists (select 1 from projects p where p.id = project_id and p.user_id = auth.uid()));
+  for update using (exists (select 1 from projects p where p.id = project_id and p.user_id = (select auth.uid())))
+  with check (exists (select 1 from projects p where p.id = project_id and p.user_id = (select auth.uid())));
 
 create policy "members claim own invite" on project_members
   for update
-  using (user_id is null and lower(invited_email) = lower(auth.jwt() ->> 'email'))
-  with check (user_id = auth.uid() and lower(invited_email) = lower(auth.jwt() ->> 'email'));
+  using (user_id is null and lower(invited_email) = lower((select auth.jwt()) ->> 'email'))
+  with check (user_id = (select auth.uid()) and lower(invited_email) = lower((select auth.jwt()) ->> 'email'));
 
 create policy "members delete by owner or self" on project_members
   for delete using (
-    user_id = auth.uid()
-    or exists (select 1 from projects p where p.id = project_id and p.user_id = auth.uid())
+    user_id = (select auth.uid())
+    or exists (select 1 from projects p where p.id = project_id and p.user_id = (select auth.uid()))
   );
