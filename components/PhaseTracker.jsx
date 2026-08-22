@@ -53,13 +53,13 @@ function PhaseCard({ phase, expanded, onToggleExpand, onCycleStatus, onFieldComm
           <div className="flex items-center gap-2 flex-wrap">
             <p className="text-sm font-bold">{phase.title}</p>
             {phase.links_to_design && (
-              <button onClick={(e) => { e.stopPropagation(); onOpenDesign(); }} className="text-[11px] text-cyan-400 hover:text-cyan-300 underline underline-offset-2">
+              <button onClick={(e) => { e.stopPropagation(); onOpenDesign(); }} className="text-[11px] text-cyan-700 hover:text-cyan-600 underline underline-offset-2">
                 فتح أداة التصميم
               </button>
             )}
           </div>
           <p className="text-xs text-slate-500 mt-0.5">{phase.description}</p>
-          <p className="text-[11px] font-mono text-slate-600 mt-1">
+          <p className="text-[11px] font-mono text-slate-500 mt-1">
             {doneSub}/{phase.subtasks.length} مهام فرعية
             {phase.links_to_design && designProgress > 0 ? ` · ${designProgress} غرفة مرسومة` : ""}
           </p>
@@ -81,15 +81,15 @@ function PhaseCard({ phase, expanded, onToggleExpand, onCycleStatus, onFieldComm
               {phase.subtasks.map((s) => (
                 <div key={s.id} className="flex items-center gap-2 group">
                   <button onClick={() => onToggleSubtask(s.id, !s.done)} className="shrink-0">
-                    {s.done ? <CheckCircle2 size={16} className="text-emerald-400" /> : <Circle size={16} className="text-slate-600" />}
+                    {s.done ? <CheckCircle2 size={16} className="text-emerald-400" /> : <Circle size={16} className="text-slate-500" />}
                   </button>
                   <span className={`text-xs flex-1 ${s.done ? "text-slate-500 line-through" : "text-slate-200"}`}>{s.text}</span>
-                  <button onClick={() => onRemoveSubtask(s.id)} className="opacity-0 group-hover:opacity-100 text-slate-600 hover:text-red-400 transition-opacity">
+                  <button onClick={() => onRemoveSubtask(s.id)} className="opacity-0 group-hover:opacity-100 text-slate-500 hover:text-red-400 transition-opacity">
                     <X size={13} />
                   </button>
                 </div>
               ))}
-              {phase.subtasks.length === 0 && <p className="text-[11px] text-slate-600">لا توجد مهام فرعية.</p>}
+              {phase.subtasks.length === 0 && <p className="text-[11px] text-slate-500">لا توجد مهام فرعية.</p>}
             </div>
             <div className="flex items-center gap-2 mt-2">
               <input
@@ -191,12 +191,12 @@ export default function PhaseTracker({ phases, setPhases, designProgress, onOpen
   const pct = totalSub === 0 ? 0 : Math.round((doneSub / totalSub) * 100);
 
   return (
-    <div className="flex-1 overflow-y-auto p-5">
+    <main className="flex-1 overflow-y-auto p-5">
       <div className="max-w-2xl mx-auto space-y-5">
         <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4">
           <div className="flex items-center justify-between mb-2">
             <p className="text-sm font-bold">التقدم العام</p>
-            <p className="text-sm font-mono text-cyan-400">{pct}%</p>
+            <p className="text-sm font-mono text-cyan-700">{pct}%</p>
           </div>
           <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
             <div className="h-full bg-cyan-500 transition-all duration-500" style={{ width: `${pct}%` }} />
@@ -222,6 +222,6 @@ export default function PhaseTracker({ phases, setPhases, designProgress, onOpen
           ))}
         </div>
       </div>
-    </div>
+    </main>
   );
 }

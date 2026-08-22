@@ -71,7 +71,7 @@ export default function UpdatePassword({ onDone }) {
   }
 
   return (
-    <div dir="rtl" className="w-full h-screen flex items-center justify-center bg-slate-950 text-slate-100 px-4" style={{ fontFamily: "'Tajawal', sans-serif" }}>
+    <main dir="rtl" className="w-full h-screen flex items-center justify-center bg-slate-950 text-slate-100 px-4" style={{ fontFamily: "'Tajawal', sans-serif" }}>
       <div className="w-full max-w-md">
         <div className="flex items-center gap-2.5 mb-6">
           <div className="w-9 h-9 rounded-md overflow-hidden shrink-0">
@@ -107,7 +107,7 @@ export default function UpdatePassword({ onDone }) {
             <button
               type="submit"
               disabled={!canSubmit}
-              className="w-full flex items-center justify-center gap-2 bg-cyan-500 disabled:bg-slate-700 disabled:text-slate-400 text-slate-950 font-bold rounded-md py-2.5 mt-1 transition-colors"
+              className="w-full flex items-center justify-center gap-2 bg-cyan-500 disabled:bg-slate-700 disabled:text-slate-400 text-slate-100 font-bold rounded-md py-2.5 mt-1 transition-colors"
             >
               {loading ? (
                 <>جارِ الحفظ... <Loader2 size={16} className="animate-spin" /></>
@@ -124,6 +124,6 @@ export default function UpdatePassword({ onDone }) {
           </form>
         </div>
       </div>
-    </div>
+    </main>
   );
 }

@@ -14,7 +14,7 @@ export default function GlobalError({ error, reset }) {
   }, [error]);
 
   return (
-    <div dir="rtl" className="w-full h-screen flex items-center justify-center bg-slate-950 text-slate-100 px-4" style={{ fontFamily: "'Tajawal', sans-serif" }}>
+    <main dir="rtl" className="w-full h-screen flex items-center justify-center bg-slate-950 text-slate-100 px-4" style={{ fontFamily: "'Tajawal', sans-serif" }}>
       <div className="w-full max-w-sm text-center space-y-4">
         <div className="flex items-center justify-center gap-2 text-red-400">
           <AlertTriangle size={22} />
@@ -26,7 +26,7 @@ export default function GlobalError({ error, reset }) {
         <div className="flex items-center justify-center gap-2 pt-1">
           <button
             onClick={() => reset()}
-            className="flex items-center gap-1.5 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold rounded-md px-4 py-2 text-xs transition-colors"
+            className="flex items-center gap-1.5 bg-cyan-500 hover:bg-cyan-400 text-slate-100 font-bold rounded-md px-4 py-2 text-xs transition-colors"
           >
             <RefreshCw size={13} /> حاول من جديد
           </button>
@@ -38,6 +38,6 @@ export default function GlobalError({ error, reset }) {
           </button>
         </div>
       </div>
-    </div>
+    </main>
   );
 }

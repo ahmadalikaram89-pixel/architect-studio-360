@@ -113,7 +113,7 @@ export default function Auth() {
   }
 
   return (
-    <div dir="rtl" className="w-full h-screen flex items-center justify-center bg-slate-950 text-slate-100 px-4" style={{ fontFamily: "'Tajawal', sans-serif" }}>
+    <main dir="rtl" className="w-full h-screen flex items-center justify-center bg-slate-950 text-slate-100 px-4" style={{ fontFamily: "'Tajawal', sans-serif" }}>
       <div className="w-full max-w-md">
         <div className="flex items-center gap-2.5 mb-6">
           <div className="w-9 h-9 rounded-md overflow-hidden shrink-0">
@@ -136,14 +136,14 @@ export default function Auth() {
               <button
                 type="button"
                 onClick={() => switchMode("login")}
-                className={`flex-1 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${mode === "login" ? "bg-cyan-500 text-slate-950" : "text-slate-300 hover:text-white"}`}
+                className={`flex-1 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${mode === "login" ? "bg-cyan-500 text-slate-100" : "text-slate-300 hover:text-white"}`}
               >
                 تسجيل الدخول
               </button>
               <button
                 type="button"
                 onClick={() => switchMode("signup")}
-                className={`flex-1 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${mode === "signup" ? "bg-cyan-500 text-slate-950" : "text-slate-300 hover:text-white"}`}
+                className={`flex-1 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${mode === "signup" ? "bg-cyan-500 text-slate-100" : "text-slate-300 hover:text-white"}`}
               >
                 حساب جديد
               </button>
@@ -164,7 +164,7 @@ export default function Auth() {
               <button
                 type="button"
                 onClick={() => switchMode("login")}
-                className="text-xs text-cyan-400 hover:text-cyan-300"
+                className="text-xs text-cyan-700 hover:text-cyan-600"
               >
                 رجوع لتسجيل الدخول
               </button>
@@ -206,7 +206,7 @@ export default function Auth() {
                 <button
                   type="button"
                   onClick={() => switchMode("reset")}
-                  className="text-xs text-cyan-400 hover:text-cyan-300 -mt-2"
+                  className="text-xs text-cyan-700 hover:text-cyan-600 -mt-2"
                 >
                   نسيت كلمة السر؟
                 </button>
@@ -215,7 +215,7 @@ export default function Auth() {
               <button
                 type="submit"
                 disabled={!canSubmit}
-                className="w-full flex items-center justify-center gap-2 bg-cyan-500 disabled:bg-slate-700 disabled:text-slate-400 text-slate-950 font-bold rounded-md py-2.5 mt-1 transition-colors"
+                className="w-full flex items-center justify-center gap-2 bg-cyan-500 disabled:bg-slate-700 disabled:text-slate-400 text-slate-100 font-bold rounded-md py-2.5 mt-1 transition-colors"
               >
                 {loading ? (
                   <>جارِ التحقق... <Loader2 size={16} className="animate-spin" /></>
@@ -247,6 +247,6 @@ export default function Auth() {
           )}
         </div>
       </div>
-    </div>
+    </main>
   );
 }

@@ -31,7 +31,7 @@ export default function ProjectSetup({ onCreate, onSignOut, userEmail, projectsL
   }
 
   return (
-    <div dir="rtl" className="w-full h-screen flex items-center justify-center bg-slate-950 text-slate-100 px-4" style={{ fontFamily: "'Tajawal', sans-serif" }}>
+    <main dir="rtl" className="w-full h-screen flex items-center justify-center bg-slate-950 text-slate-100 px-4" style={{ fontFamily: "'Tajawal', sans-serif" }}>
       <div className="w-full max-w-md">
         <div className="flex items-center justify-between gap-2.5 mb-6">
           <div className="flex items-center gap-2.5">
@@ -66,7 +66,7 @@ export default function ProjectSetup({ onCreate, onSignOut, userEmail, projectsL
         )}
 
         <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-5 space-y-4">
-          <div className="flex items-center gap-2 text-cyan-400 text-sm font-bold">
+          <div className="flex items-center gap-2 text-cyan-700 text-sm font-bold">
             <FolderPlus size={16} /> ابدأ مشروعاً جديداً من الصفر
           </div>
 
@@ -83,7 +83,7 @@ export default function ProjectSetup({ onCreate, onSignOut, userEmail, projectsL
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs text-slate-400 block mb-1.5">نوع الأرض</label>
-              <select value={landType} onChange={(e) => setLandType(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-md px-2.5 py-2 text-sm outline-none focus:border-cyan-500">
+              <select value={landType} onChange={(e) => setLandType(e.target.value)} aria-label="نوع الأرض" className="w-full bg-slate-950 border border-slate-700 rounded-md px-2.5 py-2 text-sm outline-none focus:border-cyan-500">
                 {LAND_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
               </select>
             </div>
@@ -96,9 +96,9 @@ export default function ProjectSetup({ onCreate, onSignOut, userEmail, projectsL
           <div>
             <label className="text-xs text-slate-400 block mb-1.5">أبعاد الأرض (متر)</label>
             <div className="flex items-center gap-2">
-              <input type="number" min="6" max="60" value={width} onChange={(e) => setWidth(clamp(parseFloat(e.target.value) || 6, 6, 60))} className="w-full bg-slate-950 border border-slate-700 rounded-md px-2.5 py-2 text-sm outline-none focus:border-cyan-500 font-mono" />
+              <input type="number" min="6" max="60" value={width} onChange={(e) => setWidth(clamp(parseFloat(e.target.value) || 6, 6, 60))} aria-label="عرض الأرض بالمتر" className="w-full bg-slate-950 border border-slate-700 rounded-md px-2.5 py-2 text-sm outline-none focus:border-cyan-500 font-mono" />
               <span className="text-slate-500 text-xs">×</span>
-              <input type="number" min="6" max="60" value={depth} onChange={(e) => setDepth(clamp(parseFloat(e.target.value) || 6, 6, 60))} className="w-full bg-slate-950 border border-slate-700 rounded-md px-2.5 py-2 text-sm outline-none focus:border-cyan-500 font-mono" />
+              <input type="number" min="6" max="60" value={depth} onChange={(e) => setDepth(clamp(parseFloat(e.target.value) || 6, 6, 60))} aria-label="عمق الأرض بالمتر" className="w-full bg-slate-950 border border-slate-700 rounded-md px-2.5 py-2 text-sm outline-none focus:border-cyan-500 font-mono" />
               <span className="text-slate-500 text-xs whitespace-nowrap">متر</span>
             </div>
             <p className="text-[11px] font-mono text-slate-500 mt-1">المساحة الإجمالية: {(width * depth).toFixed(0)} م²</p>
@@ -107,7 +107,7 @@ export default function ProjectSetup({ onCreate, onSignOut, userEmail, projectsL
           <button
             disabled={!canCreate}
             onClick={handleCreate}
-            className="w-full flex items-center justify-center gap-2 bg-cyan-500 disabled:bg-slate-700 disabled:text-slate-400 text-slate-950 font-bold rounded-md py-2.5 mt-1 transition-colors"
+            className="w-full flex items-center justify-center gap-2 bg-cyan-500 disabled:bg-slate-700 disabled:text-slate-400 text-slate-100 font-bold rounded-md py-2.5 mt-1 transition-colors"
           >
             {loading ? (
               <>جارِ الإنشاء... <Loader2 size={16} className="animate-spin" /></>
@@ -123,6 +123,6 @@ export default function ProjectSetup({ onCreate, onSignOut, userEmail, projectsL
           )}
         </div>
       </div>
-    </div>
+    </main>
   );
 }
