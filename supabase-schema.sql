@@ -356,14 +356,19 @@ alter table stairs enable row level security;
 alter table project_members enable row level security;
 
 -- إصلاح: إنشاء مشروع جديد كان بيفشل دايماً بخطأ "new row violates row-level security policy
--- for table projects" — تحقّقنا (سجلات edge_logs/postgres_logs الحقيقية + محاكاة معزولة
--- بجدول تجريبي فاضي) إنه سياسة "projects insert" (with check (select auth.uid()) = user_id)
--- كانت بترفض كل محاولة إدراج، بغض النظر عن تطابق auth.uid() الفعلي مع القيمة المرسلة (حتى
--- مقارنة auth.uid() بنفسه بجدول تجريبي بسيط كانت تفشل) — سلوك غير متوقّع بمقارنة WITH CHECK
--- لصف جديد. الحل الأقوى (وتوصية Supabase الرسمية لتفادي هالصنف من المشاكل بالكامل): بدل ما
--- نعتمد على مطابقة قيمة user_id يلي بيرسلها العميل، trigger قبل الإدراج بيفرض auth.uid()
--- كقيمة وحيدة ممكنة لـuser_id من طرف الخادم — أي قيمة يرسلها العميل بتتجاهل/تُستبدل تلقائياً،
--- فما في مجال إطلاقاً لعدم تطابق. الأمان ضل نفسه بالضبط (ما حدا يقدر يدّعي مشروع بمعرّف تاني)
+-- for table projects". محاولة أولى (trigger set_project_owner لفرض user_id من الخادم) خفّفت
+-- الشك لكن ما حلّت المشكلة الفعلية — تحقّقنا هالمرة بتجربة معزولة حقيقية (INSERT بنفس القيم
+-- بالضبط، مرة بدون RETURNING نجحت، ومرة مع RETURNING فشلت): السبب الجذري إنه أمر
+-- "INSERT ... RETURNING" بيفرض سياسة SELECT كمان على الصف المُرجَع، وسياسة
+-- "projects select" (has_project_read_access) كانت بتعمل subquery يرجع يفحص جدول projects
+-- نفسه (self-reference). بقواعد رؤية MVCC، صف تم إدراجه ضمن نفس الأمر (command) مش مرئي
+-- لاستعلام فرعي يفحص نفس الجدول ضمن نفس الأمر — فـ has_project_read_access كانت ترجع false
+-- دايماً على الصف الجديد وقت RETURNING، بغض النظر عن صحة auth.uid() أو الـ trigger. الحل:
+-- سياسات select/update على جدول projects تفحص عمود الصف نفسه (user_id/id) مباشرة بدل
+-- استعلام فرعي يرجع لنفس الجدول — هيك ما في self-reference إطلاقاً. باقي الجداول (rooms,
+-- phases...) يلي بتستخدم has_project_read_access/has_project_write_access ما إلها هالمشكلة
+-- لأنها بتفحص جدول projects وهوّ جدول مختلف عن يلي عم يتعمله insert، فضلت متل ما هي.
+-- الـ trigger تحت ضل موجود كطبقة حماية إضافية (دفاع بعمق) رغم إنه مو هو سبب العطل الأصلي.
 create or replace function set_project_owner()
 returns trigger language plpgsql security definer set search_path = public as $$
 begin
@@ -379,9 +384,22 @@ create trigger trg_set_project_owner
   for each row execute function set_project_owner();
 
 drop policy if exists "own projects" on projects;
-create policy "projects select" on projects for select using (has_project_read_access(id));
+drop policy if exists "projects select" on projects;
+create policy "projects select" on projects for select using (
+  user_id = (select auth.uid())
+  or exists (select 1 from project_members m where m.project_id = id and m.user_id = (select auth.uid()))
+);
 create policy "projects insert" on projects for insert with check (true);
-create policy "projects update" on projects for update using (has_project_write_access(id)) with check (has_project_write_access(id));
+drop policy if exists "projects update" on projects;
+create policy "projects update" on projects for update
+  using (
+    user_id = (select auth.uid())
+    or exists (select 1 from project_members m where m.project_id = id and m.user_id = (select auth.uid()) and m.role = 'editor')
+  )
+  with check (
+    user_id = (select auth.uid())
+    or exists (select 1 from project_members m where m.project_id = id and m.user_id = (select auth.uid()) and m.role = 'editor')
+  );
 create policy "projects delete" on projects for delete using ((select auth.uid()) = user_id); -- حذف المشروع كامل: المالك بس، حتى الـ editor ما بيقدر
 
 drop policy if exists "own phases" on phases;
