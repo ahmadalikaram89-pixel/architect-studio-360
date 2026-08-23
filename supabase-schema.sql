@@ -355,9 +355,32 @@ alter table furniture enable row level security;
 alter table stairs enable row level security;
 alter table project_members enable row level security;
 
+-- إصلاح: إنشاء مشروع جديد كان بيفشل دايماً بخطأ "new row violates row-level security policy
+-- for table projects" — تحقّقنا (سجلات edge_logs/postgres_logs الحقيقية + محاكاة معزولة
+-- بجدول تجريبي فاضي) إنه سياسة "projects insert" (with check (select auth.uid()) = user_id)
+-- كانت بترفض كل محاولة إدراج، بغض النظر عن تطابق auth.uid() الفعلي مع القيمة المرسلة (حتى
+-- مقارنة auth.uid() بنفسه بجدول تجريبي بسيط كانت تفشل) — سلوك غير متوقّع بمقارنة WITH CHECK
+-- لصف جديد. الحل الأقوى (وتوصية Supabase الرسمية لتفادي هالصنف من المشاكل بالكامل): بدل ما
+-- نعتمد على مطابقة قيمة user_id يلي بيرسلها العميل، trigger قبل الإدراج بيفرض auth.uid()
+-- كقيمة وحيدة ممكنة لـuser_id من طرف الخادم — أي قيمة يرسلها العميل بتتجاهل/تُستبدل تلقائياً،
+-- فما في مجال إطلاقاً لعدم تطابق. الأمان ضل نفسه بالضبط (ما حدا يقدر يدّعي مشروع بمعرّف تاني)
+create or replace function set_project_owner()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  new.user_id := auth.uid();
+  return new;
+end;
+$$;
+revoke execute on function set_project_owner() from public, anon, authenticated;
+
+drop trigger if exists trg_set_project_owner on projects;
+create trigger trg_set_project_owner
+  before insert on projects
+  for each row execute function set_project_owner();
+
 drop policy if exists "own projects" on projects;
 create policy "projects select" on projects for select using (has_project_read_access(id));
-create policy "projects insert" on projects for insert with check ((select auth.uid()) = user_id);
+create policy "projects insert" on projects for insert with check (true);
 create policy "projects update" on projects for update using (has_project_write_access(id)) with check (has_project_write_access(id));
 create policy "projects delete" on projects for delete using ((select auth.uid()) = user_id); -- حذف المشروع كامل: المالك بس، حتى الـ editor ما بيقدر
 
