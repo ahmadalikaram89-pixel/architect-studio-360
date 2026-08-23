@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "next lint",
     "test": "vitest run",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "typecheck": "tsc --noEmit --project tsconfig.lib.json"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",
@@ -21,10 +22,12 @@
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",
     "@playwright/test": "^1.62.1",
+    "@types/node": "^26.2.0",
     "autoprefixer": "^10.4.19",
     "jsdom": "^30.0.1",
     "postcss": "^8.4.38",
     "tailwindcss": "^3.4.4",
+    "typescript": "7.0.2",
     "vitest": "^4.1.11",
     "web-ifc": "^0.0.77"
   }
