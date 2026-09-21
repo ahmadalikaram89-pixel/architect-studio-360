@@ -1,11 +1,11 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from "react";
 import {
   Layers, Trash2, RotateCw, PlayCircle, PauseCircle, Ruler, Sparkles, X, PencilRuler,
   FolderPlus, ChevronDown, ChevronUp, Plus,
   Loader2, AlertTriangle, LogOut, AppWindow, DoorOpen, Printer, Folders, Move, Armchair, Undo2, Redo2, FileDown, Calculator, Box, HardHat, Users, Lock,
-  MoreVertical, Menu,
+  MoreVertical, Menu, ZoomIn, ZoomOut, Maximize,
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 import { computeMembership } from "../lib/collaboration";
@@ -17,6 +17,7 @@ import {
   furnitureFootprint, hitTestFurniture, hitTestRoomForFurniture,
   floorToFloorHeight, stairEffectiveFootprint, hitTestStairs, hitTestGridForStair,
   drawFloorPlanImage, toolbarPlacement,
+  MIN_ZOOM, MAX_ZOOM, ZOOM_STEP, clampZoom, computeFitZoom, clientToPlanMeters,
 } from "../lib/planGeometry";
 import { exportFloorsToDxf } from "../lib/dxfExport";
 import { exportProjectToIfc } from "../lib/ifcExport";
@@ -137,6 +138,86 @@ export default function ArchitectStudio({ session }) {
   const polygonDraftRef = useRef([]); // نقاط الشكل الحر المتراكمة أثناء الرسم (بالمتر)
   const polygonHoverRef = useRef(null); // موضع الفأرة الحالي — لرسم الخط "المطاطي" لآخر نقطة
 
+  // ====== زوم/تحريك المخطط 2D ======
+  // الزوم = قياس CSS للكانفاس (مو مصفوفة تحويل على عنصر أب): هيك الحاوية الأب بتشوف
+  // المخطط المكبّر كمحتوى فايض فعلاً فبتعطي تمرير (pan) مجاني بلا أي حساب، والشرائط
+  // العائمة فوق الكانفاس (أدوات الباب/الأثاث/السلم) بتضل مواضعها النسبية صحيحة تلقائياً
+  // لأن حاويتها بتلتف على الكانفاس بالضبط — وبنفس الوقت بيضل حجم خطها طبيعي (ما بتتمدد).
+  const scrollBoxRef = useRef(null);
+  const [zoom, setZoom] = useState(1);
+  const [fitZoom, setFitZoom] = useState(1);
+  const zoomRef = useRef(1);
+  zoomRef.current = zoom;
+  const userZoomedRef = useRef(false); // قبل أول تكبير يدوي، الزوم بيتبع ملاءمة الشاشة تلقائياً
+  const zoomAnchorRef = useRef(null); // النقطة المطلوب تثبيتها تحت نفس المؤشر بعد تغيّر الزوم
+  const touchPointersRef = useRef(new Map()); // أصابع اللمس النشطة (إصبعين = تحريك + تكبير)
+  const pinchRef = useRef(null);
+  const mousePanRef = useRef(null);
+  const polygonTapPointerRef = useRef(null); // آخر إصبع أضاف نقطة بالشكل الحر — لسحبها لو تبيّن إنها بداية قرصة
+
+  function setCanvasCursor(value) {
+    const canvas = canvasRef.current;
+    if (canvas) canvas.style.cursor = value;
+  }
+
+  // بتلغي أي رسم قيد التنفيذ (سحب مستطيل أو نقطة شكل حر انضافت لتوّها) — بتنستدعى لما
+  // يتبيّن إنه الإصبع الأول كان بداية قرصة تكبير مو بداية رسم.
+  function cancelActiveDraw() {
+    draggingRef.current = false;
+    draftRef.current = null;
+    if (polygonDrawMode && polygonTapPointerRef.current !== null && touchPointersRef.current.has(polygonTapPointerRef.current)) {
+      polygonDraftRef.current = polygonDraftRef.current.slice(0, -1);
+      polygonHoverRef.current = null;
+    }
+    polygonTapPointerRef.current = null;
+    drawPlan();
+  }
+
+  // بتغيّر الزوم مع تثبيت نقطة المخطط يلي تحت (clientX, clientY) بمكانها على الشاشة —
+  // بلا هيك، التكبير بيبعد المستخدم عن المكان يلي عم يشتغل عليه بالضبط. التصحيح الفعلي
+  // للتمرير بينطبّق بـuseLayoutEffect تحت، بعد ما ياخد الكانفاس قياسه الجديد.
+  function applyZoom(next, clientX, clientY) {
+    const canvas = canvasRef.current, box = scrollBoxRef.current;
+    userZoomedRef.current = true;
+    if (canvas && box) {
+      const rect = canvas.getBoundingClientRect();
+      const boxRect = box.getBoundingClientRect();
+      const cx = clientX ?? boxRect.left + boxRect.width / 2;
+      const cy = clientY ?? boxRect.top + boxRect.height / 2;
+      zoomAnchorRef.current = {
+        px: rect.width > 0 ? ((cx - rect.left) / rect.width) * (gridW * PPM) : 0,
+        py: rect.height > 0 ? ((cy - rect.top) / rect.height) * (gridH * PPM) : 0,
+        cx, cy,
+      };
+    }
+    setZoom(clampZoom(next));
+  }
+
+  function resetZoom() {
+    userZoomedRef.current = false;
+    zoomAnchorRef.current = null;
+    setZoom(fitZoom);
+  }
+
+  function startMousePan(e) {
+    const box = scrollBoxRef.current;
+    if (!box) return;
+    mousePanRef.current = { x: e.clientX, y: e.clientY, left: box.scrollLeft, top: box.scrollTop };
+    setCanvasCursor("grabbing");
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* المتصفح ما دعم الالتقاط — التحريك بيضل شغال بلاه */ }
+  }
+
+  function beginPinch() {
+    cancelActiveDraw();
+    const [a, b] = [...touchPointersRef.current.values()];
+    pinchRef.current = {
+      dist: Math.hypot(a.x - b.x, a.y - b.y) || 1,
+      cx: (a.x + b.x) / 2,
+      cy: (a.y + b.y) / 2,
+      zoom: zoomRef.current,
+    };
+  }
+
   // ====== سجل التراجع/الإعادة (Undo/Redo) ======
   // لقطة = نسخة كاملة من rooms (بأبوابها/نوافذها/أثاثها المتداخل) + قائمة السلالم لحظة معيّنة.
   // pushHistory() بتُستدعى بأول سطر بكل دالة تعديل تصميم (قبل أي setState)، فبتلتقط الحالة
@@ -240,6 +321,11 @@ export default function ArchitectStudio({ session }) {
     function onKeyDown(e) {
       const tag = document.activeElement?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA") return;
+      if (view === "plan" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        if (e.key === "+" || e.key === "=") { e.preventDefault(); applyZoom(zoomRef.current * ZOOM_STEP); return; }
+        if (e.key === "-" || e.key === "_") { e.preventDefault(); applyZoom(zoomRef.current / ZOOM_STEP); return; }
+        if (e.key === "0") { e.preventDefault(); resetZoom(); return; }
+      }
       if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "z") return;
       e.preventDefault();
       if (e.shiftKey) redo();
@@ -256,7 +342,12 @@ export default function ArchitectStudio({ session }) {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
-    const w = canvas.width, h = canvas.height;
+    // الزوم وكثافة بكسل الشاشة كلاهما مصفوفة تحويل وحدة على السياق: كل سطور الرسم تحت
+    // بتضل بإحداثيات المخطط الخام (متر × PPM)، بلا أي علم بالزوم — ولأنه إعادة رسم حقيقية
+    // بالمقاس الجديد (مو تمديد صورة جاهزة)، الخطوط والنصوص بتضل حادّة بأي تكبير.
+    const w = gridW * PPM, h = gridH * PPM;
+    const s = w > 0 ? canvas.width / w : 1;
+    ctx.setTransform(s, 0, 0, s, 0, 0);
     ctx.clearRect(0, 0, w, h);
     ctx.fillStyle = "#FFFFFF";
     ctx.fillRect(0, 0, w, h);
@@ -417,29 +508,76 @@ export default function ArchitectStudio({ session }) {
     }
   }, [rooms, selectedId, selectedFurniture, stairsList, selectedStair, wallHeight, gridW, gridH, placeMode, currentFloor, polygonDrawMode, showDimensions]);
 
-  useEffect(() => {
+  // مقاس الكانفاس بالـCSS بيجي من JSX مباشرة (فبيكون جاهز وقت layout effects)، وهون
+  // بينضبط مخزن البكسل الفعلي = مقاس CSS × كثافة الشاشة.
+  useLayoutEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    canvas.width = gridW * PPM;
-    canvas.height = gridH * PPM;
+    const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
+    const wantW = Math.max(1, Math.round(gridW * PPM * zoom * dpr));
+    const wantH = Math.max(1, Math.round(gridH * PPM * zoom * dpr));
+    if (canvas.width !== wantW || canvas.height !== wantH) {
+      canvas.width = wantW;
+      canvas.height = wantH;
+    }
     drawPlan();
-  }, [drawPlan, gridW, gridH, view]);
+  }, [drawPlan, gridW, gridH, view, zoom]);
+
+  // تصحيح التمرير بعد تغيّر الزوم — بيرجّع النقطة المرساة تحت نفس نقطة الشاشة بالضبط.
+  useLayoutEffect(() => {
+    const anchor = zoomAnchorRef.current;
+    zoomAnchorRef.current = null;
+    const canvas = canvasRef.current, box = scrollBoxRef.current;
+    if (!anchor || !canvas || !box) return;
+    const rect = canvas.getBoundingClientRect();
+    box.scrollLeft += rect.left + anchor.px * zoom - anchor.cx;
+    box.scrollTop += rect.top + anchor.py * zoom - anchor.cy;
+  }, [zoom]);
+
+  // ملاءمة تلقائية لحجم الحاوية — لحد ما يكبّر المستخدم يدوياً أول مرة.
+  useEffect(() => {
+    const box = scrollBoxRef.current;
+    if (!box || view !== "plan" || typeof ResizeObserver === "undefined") return;
+    function measure() {
+      const fit = computeFitZoom(box.clientWidth, box.clientHeight, gridW, gridH);
+      setFitZoom(fit);
+      if (!userZoomedRef.current) setZoom(fit);
+    }
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(box);
+    return () => ro.disconnect();
+  }, [view, gridW, gridH]);
+
+  // مشروع جديد = مخطط جديد بأبعاد أرض مختلفة — نرجع لملاءمة الشاشة بدل ما نورّث زوم قديم.
+  useEffect(() => { userZoomedRef.current = false; }, [project?.id]);
+
+  // Ctrl/⌘ + عجلة الفأرة = تكبير حوالين المؤشر، والعجلة لحالها بتضل تمرير المتصفح العادي
+  // (= تحريك المخطط). لازم مستمع أصلي بـpassive:false لأن preventDefault ما بينفع بـonWheel
+  // بريأكت (بينربط passive على الجذر)، وبدونه المتصفح بيكبّر الصفحة كلها بدل المخطط.
+  useEffect(() => {
+    const box = scrollBoxRef.current;
+    if (!box || view !== "plan") return;
+    function onWheel(e) {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      e.preventDefault();
+      const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 100 : 1;
+      applyZoom(zoomRef.current * Math.exp((-e.deltaY * unit) / 500), e.clientX, e.clientY);
+    }
+    box.addEventListener("wheel", onWheel, { passive: false });
+    return () => box.removeEventListener("wheel", onWheel);
+  }, [view, gridW, gridH]);
 
   function getMeterCoords(e) {
-    const canvas = canvasRef.current;
-    const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width, scaleY = canvas.height / rect.height;
-    const px = (e.clientX - rect.left) * scaleX, py = (e.clientY - rect.top) * scaleY;
-    return { x: snap(clamp(px / PPM, 0, gridW)), y: snap(clamp(py / PPM, 0, gridH)) };
+    const { x, y } = getMeterCoordsRaw(e);
+    return { x: snap(x), y: snap(y) };
   }
 
   // إحداثيات بدون snapping — لازمة لاكتشاف أقرب جدار بدقة (لا نريد قفزات كل 0.5م)
   function getMeterCoordsRaw(e) {
     const canvas = canvasRef.current;
-    const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width, scaleY = canvas.height / rect.height;
-    const px = (e.clientX - rect.left) * scaleX, py = (e.clientY - rect.top) * scaleY;
-    return { x: clamp(px / PPM, 0, gridW), y: clamp(py / PPM, 0, gridH) };
+    if (!canvas) return { x: 0, y: 0 };
+    return clientToPlanMeters(e.clientX, e.clientY, canvas.getBoundingClientRect(), gridW, gridH);
   }
 
   // إحداثيات الرسم (مستطيل أو شكل حر) — ملتصقة بالشبكة أو خام حسب مفتاح "الصق بالشبكة"
@@ -448,6 +586,16 @@ export default function ArchitectStudio({ session }) {
   }
 
   function handlePointerDown(e) {
+    if (e.pointerType === "mouse") {
+      if (e.button === 1) { startMousePan(e); return; } // الزر الأوسط = تحريك المخطط، بأي وضع كان
+      if (e.button !== 0) return; // زر يمين/جانبي ما بيبلّش رسم
+    }
+    if (e.pointerType === "touch") {
+      const pts = touchPointersRef.current;
+      pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pts.size === 2) { beginPinch(); return; }
+      if (pts.size > 2) return;
+    }
     if (polygonDrawMode) {
       if (!canEdit) return;
       const { x, y } = getMeterCoordsForDraw(e);
@@ -460,6 +608,7 @@ export default function ArchitectStudio({ session }) {
         }
       }
       polygonDraftRef.current = [...pts, { x, y }];
+      polygonTapPointerRef.current = e.pointerType === "touch" ? e.pointerId : null;
       drawPlan();
       return;
     }
@@ -525,6 +674,34 @@ export default function ArchitectStudio({ session }) {
     draftRef.current = { sx: x, sy: y, ex: x, ey: y };
   }
   function handlePointerMove(e) {
+    if (mousePanRef.current) {
+      const box = scrollBoxRef.current, m = mousePanRef.current;
+      if (box) {
+        box.scrollLeft = m.left - (e.clientX - m.x);
+        box.scrollTop = m.top - (e.clientY - m.y);
+      }
+      return;
+    }
+    if (e.pointerType === "touch" && touchPointersRef.current.has(e.pointerId)) {
+      const pts = touchPointersRef.current;
+      pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      const pinch = pinchRef.current;
+      if (pinch && pts.size >= 2) {
+        const [a, b] = [...pts.values()];
+        const dist = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+        const cx = (a.x + b.x) / 2, cy = (a.y + b.y) / 2;
+        // تحريك أولاً (انزياح مركز الإصبعين)، وبعدين تكبير مرساة على المركز الجديد —
+        // الترتيب مهم: حساب المرساة بيقرأ موقع الكانفاس الحالي بعد التمرير.
+        const box = scrollBoxRef.current;
+        if (box) {
+          box.scrollLeft -= cx - pinch.cx;
+          box.scrollTop -= cy - pinch.cy;
+        }
+        pinch.cx = cx; pinch.cy = cy;
+        applyZoom(pinch.zoom * (dist / pinch.dist), cx, cy);
+        return;
+      }
+    }
     if (polygonDrawMode) {
       polygonHoverRef.current = getMeterCoordsForDraw(e);
       drawPlan();
@@ -557,7 +734,18 @@ export default function ArchitectStudio({ session }) {
     draftRef.current = { ...draftRef.current, ex: x, ey: y };
     drawPlan();
   }
-  async function handlePointerUp() {
+  async function handlePointerUp(e) {
+    if (e?.pointerType === "touch") touchPointersRef.current.delete(e.pointerId);
+    if (mousePanRef.current) {
+      mousePanRef.current = null;
+      setCanvasCursor("crosshair");
+      return;
+    }
+    if (pinchRef.current) {
+      // آخر إصبع رفع = خلصت القرصة. الإصبع المتبقي ما بيبلّش رسم (الرسم انلغى ببدايتها).
+      if (touchPointersRef.current.size < 2) pinchRef.current = null;
+      return;
+    }
     if (placeMode) {
       hoverRef.current = null;
       drawPlan();
@@ -1780,7 +1968,11 @@ export default function ArchitectStudio({ session }) {
 
           <main className="flex-1 relative bg-slate-950 overflow-auto">
             {view === "plan" ? (
-              <div className="w-full h-full flex items-center justify-center p-4">
+              // حاوية التمرير: `m-auto` بدل `justify-center` عمداً — التوسيط بـjustify-center
+              // بيقصّ بداية المحتوى ويمنع التمرير لعنده لما يكبر عن الحاوية، بينما الهامش
+              // التلقائي بيوسّط وقت ما يكون أصغر وبيتصرف طبيعي وقت ما يكبر.
+              <div ref={scrollBoxRef} className="w-full h-full overflow-auto flex">
+                <div className="m-auto p-4">
                 <div className="relative">
                   <canvas
                     ref={canvasRef}
@@ -1789,7 +1981,7 @@ export default function ArchitectStudio({ session }) {
                     onPointerUp={handlePointerUp}
                     onPointerLeave={handlePointerUp}
                     className="rounded-md border border-slate-800 shadow-2xl touch-none"
-                    style={{ cursor: "crosshair", maxWidth: "100%", height: "auto" }}
+                    style={{ cursor: "crosshair", width: `${gridW * PPM * zoom}px`, height: `${gridH * PPM * zoom}px` }}
                   />
                   {floorRooms.length === 0 && (
                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
@@ -1870,9 +2062,45 @@ export default function ArchitectStudio({ session }) {
                     );
                   })()}
                 </div>
+                </div>
               </div>
             ) : (
               <Viewport3D rooms={rooms} stairs={stairsList} wallHeight={wallHeight} wallColor={wallColor} wallMaterial={wallMaterial} autoRotate={autoRotate} />
+            )}
+
+            {/* لوحة الزوم — برّا حاوية التمرير عمداً: بتضل ثابتة بمكانها أثناء تحريك المخطط */}
+            {view === "plan" && (
+              <div className="absolute bottom-3 start-3 z-20 flex items-center gap-0.5 rounded-lg border border-slate-800 bg-slate-900/90 p-1 shadow-xl backdrop-blur">
+                <button
+                  onClick={() => applyZoom(zoom / ZOOM_STEP)}
+                  disabled={zoom <= MIN_ZOOM + 1e-6}
+                  title="تصغير (−)"
+                  aria-label="تصغير المخطط"
+                  className="p-1.5 rounded text-slate-300 hover:text-white hover:bg-slate-800 disabled:opacity-40 disabled:hover:bg-transparent"
+                >
+                  <ZoomOut size={16} />
+                </button>
+                <span aria-live="polite" className="min-w-[3rem] text-center font-mono text-[11px] text-slate-300 select-none">
+                  {Math.round(zoom * 100)}%
+                </span>
+                <button
+                  onClick={() => applyZoom(zoom * ZOOM_STEP)}
+                  disabled={zoom >= MAX_ZOOM - 1e-6}
+                  title="تكبير (+)"
+                  aria-label="تكبير المخطط"
+                  className="p-1.5 rounded text-slate-300 hover:text-white hover:bg-slate-800 disabled:opacity-40 disabled:hover:bg-transparent"
+                >
+                  <ZoomIn size={16} />
+                </button>
+                <button
+                  onClick={resetZoom}
+                  title="ملاءمة الشاشة (0)"
+                  aria-label="ملاءمة المخطط للشاشة"
+                  className="p-1.5 rounded text-slate-300 hover:text-white hover:bg-slate-800"
+                >
+                  <Maximize size={15} />
+                </button>
+              </div>
             )}
           </main>
         </div>
