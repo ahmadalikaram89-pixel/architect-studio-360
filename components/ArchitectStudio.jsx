@@ -10,7 +10,7 @@ import {
 import { supabase } from "../lib/supabaseClient";
 import { computeMembership } from "../lib/collaboration";
 import MembersPanel from "./MembersPanel";
-import { DOOR_W, WIN_W, computeSharedBoundaries, sharedWallRanges, FURNITURE_KINDS, stairFootprint, roomArea } from "../lib/build3d";
+import { DOOR_W, WIN_W, computeSharedBoundaries, sharedWallRanges, computePolygonSharedBoundaries, addPolygonSharedRanges, FURNITURE_KINDS, stairFootprint, roomArea } from "../lib/build3d";
 import {
   PPM, snap, clamp, floorLabel, FLOOR_CAP,
   hitTestWalls, hitTestOpenings, openingMarkPoints, drawRoomDimensions, drawDoorSwing, drawStairSymbol,
@@ -129,7 +129,13 @@ export default function ArchitectStudio({ session }) {
   }, [placeMode]);
 
   const sharedBoundaries = useMemo(() => computeSharedBoundaries(rooms.filter((r) => !r.points)), [rooms]);
-  const sharedRanges = useMemo(() => sharedWallRanges(sharedBoundaries), [sharedBoundaries]);
+  const polygonSharedBoundaries = useMemo(() => computePolygonSharedBoundaries(rooms), [rooms]);
+  // خريطة وحدة للحالتين — منع وضع نافذة على جدار مشترك بيشتغل للغرف الحرة والمستطيلة
+  // عبر نفس المسار بـhitTestWalls
+  const sharedRanges = useMemo(
+    () => addPolygonSharedRanges(sharedWallRanges(sharedBoundaries), polygonSharedBoundaries),
+    [sharedBoundaries, polygonSharedBoundaries],
+  );
 
   const canvasRef = useRef(null);
   const draftRef = useRef(null);
