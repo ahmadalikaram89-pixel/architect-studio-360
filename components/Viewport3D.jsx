@@ -6,10 +6,18 @@ import { RotateCcw } from "lucide-react";
 import { computeCenter, rebuildGroup } from "../lib/build3d";
 import { clamp } from "../lib/planGeometry";
 
-export default function Viewport3D({ rooms, stairs, wallHeight, wallColor, wallMaterial, autoRotate }) {
+// زاوية كاميرا "بيت الدمية" — phi هي الزاوية عن المحور العمودي، فكل ما صغرت الكاميرا
+// ارتفعت. 0.62 ≈ 54° فوق الأفق: عالية كفاية تشوف جوا كل الغرف دفعة وحدة، وواطية كفاية
+// تضل الجدران والأثاث مقروءين كمجسّم (مو مخطط مسطّح من فوق)
+const DOLLHOUSE_PHI = 0.62;
+const DOLLHOUSE_THETA = Math.PI / 4;
+
+export default function Viewport3D({ rooms, stairs, wallHeight, wallColor, wallMaterial, autoRotate, dollhouse = false, floorGap = 0 }) {
   const mountRef = useRef(null);
   const stateRef = useRef({});
   const flagsRef = useRef({ autoRotate });
+  const limitsRef = useRef({ maxRadius: 50 });
+  const wasDollhouseRef = useRef(dollhouse);
   const textureCacheRef = useRef(new Map());
   const [resetKey, setResetKey] = useState(0);
 
@@ -54,8 +62,8 @@ export default function Viewport3D({ rooms, stairs, wallHeight, wallColor, wallM
 
     const center0 = computeCenter(rooms, wallHeight);
     const orbit = {
-      theta: Math.PI / 4,
-      phi: 1.0,
+      theta: DOLLHOUSE_THETA,
+      phi: dollhouse ? DOLLHOUSE_PHI : 1.0,
       radius: center0.radius,
       target: new THREE.Vector3(0, center0.targetY, 0),
     };
@@ -96,7 +104,7 @@ export default function Viewport3D({ rooms, stairs, wallHeight, wallColor, wallM
       if (pointers.size >= 2) {
         const dist = distanceBetweenPointers();
         if (pinchDist) {
-          orbit.radius = clamp(orbit.radius * (pinchDist / dist), 3, 50);
+          orbit.radius = clamp(orbit.radius * (pinchDist / dist), 3, limitsRef.current.maxRadius);
           updateCamera();
         }
         pinchDist = dist;
@@ -121,7 +129,7 @@ export default function Viewport3D({ rooms, stairs, wallHeight, wallColor, wallM
     }
     function onWheel(e) {
       e.preventDefault();
-      orbit.radius = clamp(orbit.radius * (1 + e.deltaY * 0.001), 3, 50);
+      orbit.radius = clamp(orbit.radius * (1 + e.deltaY * 0.001), 3, limitsRef.current.maxRadius);
       updateCamera();
     }
 
@@ -174,9 +182,10 @@ export default function Viewport3D({ rooms, stairs, wallHeight, wallColor, wallM
     render();
 
     stateRef.current = {
-      group, orbit, updateCamera, animState, dirLight: dir,
-      center: center0, defaultRadius: center0.radius,
+      scene, group, orbit, updateCamera, animState, dirLight: dir,
+      center: center0, defaultRadius: center0.radius, defaultTargetY: center0.targetY,
     };
+    limitsRef.current.maxRadius = Math.max(50, center0.radius * 2);
 
     return () => {
       cancelAnimationFrame(raf);
@@ -195,7 +204,7 @@ export default function Viewport3D({ rooms, stairs, wallHeight, wallColor, wallM
   useEffect(() => {
     const s = stateRef.current;
     if (!s.group) return;
-    rebuildGroup(s.group, rooms, stairs, wallHeight, wallColor, s.center, s.animState, textureCacheRef.current, wallMaterial);
+    rebuildGroup(s.group, rooms, stairs, wallHeight, wallColor, s.center, s.animState, textureCacheRef.current, wallMaterial, { hideRoofs: dollhouse, floorGap });
 
     if (s.dirLight) {
       const radius = s.defaultRadius;
@@ -210,16 +219,43 @@ export default function Viewport3D({ rooms, stairs, wallHeight, wallColor, wallM
       cam.far = radius * 3 + maxWallHeight * 2;
       cam.updateProjectionMatrix();
     }
-  }, [rooms, stairs, wallHeight, wallColor, wallMaterial]);
+  }, [rooms, stairs, wallHeight, wallColor, wallMaterial, dollhouse, floorGap]);
+
+  // إعادة تأطير الكاميرا لما يتغيّر الوضع أو تباعد الطوابق — المبنى المفكوك أطول بكتير،
+  // فبلا هيك بيطلع نصّه برّا الكادر وبيبلعه الضباب. زاوية بيت الدمية بتنفرض بس عند
+  // **التبديل** للوضع، مو مع كل حركة بشريط التباعد (وإلا بتدعس على زاوية المستخدم أثناء السحب)
+  useEffect(() => {
+    const s = stateRef.current;
+    if (!s.orbit || !s.updateCamera) return;
+    const framing = computeCenter(rooms, wallHeight, floorGap);
+    s.defaultRadius = framing.radius;
+    s.defaultTargetY = framing.targetY;
+    s.orbit.target.y = framing.targetY;
+    s.orbit.radius = framing.radius;
+    limitsRef.current.maxRadius = Math.max(50, framing.radius * 2);
+    if (s.scene?.fog) s.scene.fog.far = Math.max(60, framing.radius * 2.6);
+
+    if (dollhouse !== wasDollhouseRef.current) {
+      wasDollhouseRef.current = dollhouse;
+      if (dollhouse) {
+        s.orbit.phi = DOLLHOUSE_PHI;
+        s.orbit.theta = DOLLHOUSE_THETA;
+      }
+    }
+    s.updateCamera();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dollhouse, floorGap]);
 
   useEffect(() => {
     if (resetKey === 0) return;
     const s = stateRef.current;
     if (!s.orbit) return;
-    s.orbit.theta = Math.PI / 4;
-    s.orbit.phi = 1.0;
+    s.orbit.theta = DOLLHOUSE_THETA;
+    s.orbit.phi = dollhouse ? DOLLHOUSE_PHI : 1.0;
     s.orbit.radius = s.defaultRadius;
+    s.orbit.target.y = s.defaultTargetY ?? s.orbit.target.y;
     s.updateCamera();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resetKey]);
 
   return (

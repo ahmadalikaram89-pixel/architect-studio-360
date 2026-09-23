@@ -64,7 +64,8 @@ export default function ArchitectStudio({ session }) {
   const [projectsList, setProjectsList] = useState([]);
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [phases, setPhases] = useState([]);
-  const [view, setView] = useState("phases"); // 'phases' | 'plan' | '3d'
+  const [view, setView] = useState("phases"); // 'phases' | 'plan' | '3d' | 'dollhouse'
+  const [floorGap, setFloorGap] = useState(1.5); // تباعد الطوابق بعرض بيت الدمية (متر)
   const [confirmReset, setConfirmReset] = useState(false);
   const [moreMenuOpen, setMoreMenuOpen] = useState(false); // قائمة "المزيد" بالهيدر على الشاشات الصغيرة
   const [sidebarOpen, setSidebarOpen] = useState(false); // القائمة الجانبية كـ drawer على الشاشات الصغيرة
@@ -1491,16 +1492,24 @@ export default function ArchitectStudio({ session }) {
           >
             عرض 3D · 360°
           </button>
+          <button
+            disabled={rooms.length === 0}
+            title={rooms.length === 0 ? "ارسم غرفة واحدة على الأقل أولاً" : "عرض المبنى بلا أسقف — تشوف جوا كل الغرف دفعة وحدة"}
+            onClick={() => setView("dollhouse")}
+            className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${view === "dollhouse" ? "bg-cyan-500 text-slate-100" : "text-slate-300 hover:text-white"}`}
+          >
+            بيت الدمية
+          </button>
         </div>
 
         <div className="flex items-center gap-1">
-          {(view === "plan" || view === "3d") && (
+          {(view === "plan" || view === "3d" || view === "dollhouse") && (
             <button onClick={() => setSidebarOpen((o) => !o)} title="القائمة الجانبية" aria-label="فتح/إغلاق القائمة الجانبية"
               className="lg:hidden flex items-center justify-center text-slate-400 hover:text-slate-200 p-1.5 rounded-md hover:bg-slate-800 -ml-1">
               <Menu size={17} />
             </button>
           )}
-          {(view === "plan" || view === "3d") && (
+          {(view === "plan" || view === "3d" || view === "dollhouse") && (
             <div className="flex items-center gap-0.5">
               <button onClick={undo} disabled={historyRef.current.past.length === 0} title="تراجع (Ctrl+Z)"
                 className="flex items-center justify-center text-slate-400 hover:text-slate-200 disabled:opacity-30 disabled:cursor-not-allowed p-1.5 rounded-md hover:bg-slate-800">
@@ -1598,7 +1607,7 @@ export default function ArchitectStudio({ session }) {
         />
       )}
 
-      {(view === "plan" || view === "3d") && (
+      {(view === "plan" || view === "3d" || view === "dollhouse") && (
         <div className="flex-1 flex overflow-hidden relative">
           {sidebarOpen && (
             <div className="lg:hidden absolute inset-0 z-20 bg-black/50" onClick={() => setSidebarOpen(false)} />
@@ -1856,7 +1865,43 @@ export default function ArchitectStudio({ session }) {
               return <PreciseMeasurePanel room={room} onCommit={(key, v) => updateRoomBounds(room.id, { [key]: v })} />;
             })()}
 
-            {view === "3d" && (
+            {view === "dollhouse" && (() => {
+              const floorCount = new Set(rooms.map((r) => r.floor ?? 0)).size;
+              return (
+                <div>
+                  <p className="text-xs font-semibold text-slate-400 mb-2">بيت الدمية</p>
+                  <p className="text-[11px] text-slate-500 leading-relaxed mb-3">
+                    الأسقف مخفية بهاد العرض — بتشوف جوا كل الغرف دفعة وحدة، بأثاثها ومواد جدرانها.
+                    {floorCount > 1 ? " وبما إنه المشروع أكتر من طابق، فكّ الطوابق لتشوف جوا الطابق الأرضي كمان." : ""}
+                  </p>
+                  {floorCount > 1 ? (
+                    <>
+                      <div className="flex items-center justify-between mb-1">
+                        <label htmlFor="floor-gap" className="text-[11px] text-slate-400">تباعد الطوابق</label>
+                        <span className="text-[11px] font-mono text-slate-400">{floorGap.toFixed(1)} م</span>
+                      </div>
+                      <input
+                        id="floor-gap"
+                        type="range"
+                        min="0"
+                        max="6"
+                        step="0.5"
+                        value={floorGap}
+                        aria-label="تباعد الطوابق بعرض بيت الدمية بالمتر"
+                        onChange={(e) => setFloorGap(Number(e.target.value))}
+                        className="w-full accent-cyan-500"
+                      />
+                    </>
+                  ) : (
+                    <p className="text-[11px] text-slate-500 leading-relaxed">
+                      تباعد الطوابق بيظهر هون لما يصير بالمشروع أكتر من طابق.
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
+
+            {(view === "3d" || view === "dollhouse") && (
               <div>
                 <p className="text-xs font-semibold text-slate-400 mb-2">جولة 360°</p>
                 <button onClick={() => setAutoRotate((a) => !a)}
@@ -2071,7 +2116,12 @@ export default function ArchitectStudio({ session }) {
                 </div>
               </div>
             ) : (
-              <Viewport3D rooms={rooms} stairs={stairsList} wallHeight={wallHeight} wallColor={wallColor} wallMaterial={wallMaterial} autoRotate={autoRotate} />
+              <Viewport3D
+                rooms={rooms} stairs={stairsList} wallHeight={wallHeight} wallColor={wallColor} wallMaterial={wallMaterial}
+                autoRotate={autoRotate}
+                dollhouse={view === "dollhouse"}
+                floorGap={view === "dollhouse" ? floorGap : 0}
+              />
             )}
 
             {/* لوحة الزوم — برّا حاوية التمرير عمداً: بتضل ثابتة بمكانها أثناء تحريك المخطط */}
